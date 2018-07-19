@@ -147,24 +147,26 @@ public class ClinicalAnalysisWSService extends AnalysisWSService {
             // @ApiParam(value = "Clinical analysis type, e.g. DUO, TRIO, ...") @QueryParam("type") String type,
             // @ApiParam(value = "Save interpretation in Catalog") @QueryParam("save") Boolean save,
     ) {
-        try {
-//            Configuration configuration = OpenCGAWSServer.configuration;
-//            StorageConfiguration storageConfiguration = OpenCGAWSServer.storageConfiguration;
-//            ClinicalInterpretationAnalysis analysis = new ClinicalInterpretationAnalysis(
-//                    configuration, storageConfiguration,
-//                    studyStr, panelId, panelVersion, sampleId, interpretationId, interpretationName,
-//                    BooleanUtils.isTrue(searchForVUS), BooleanUtils.isTrue(searchForUF), sessionId);
-//            analysis.execute();
-//            Interpretation interpretation = analysis.getInterpretation();
-//            if (null != interpretation) {
-//                return createOkResponse(interpretation);
-        		return createOkResponse("TODO");
+    	return Response.ok().build();
+    	
+        /* try {
+            Configuration configuration = OpenCGAWSServer.configuration;
+            StorageConfiguration storageConfiguration = OpenCGAWSServer.storageConfiguration;
+            ClinicalInterpretationAnalysis analysis = new ClinicalInterpretationAnalysis(
+                    configuration, storageConfiguration,
+                    studyStr, panelId, panelVersion, sampleId, interpretationId, interpretationName,
+                    BooleanUtils.isTrue(searchForVUS), BooleanUtils.isTrue(searchForUF), sessionId);
+            analysis.execute();
+            Interpretation interpretation = analysis.getInterpretation();
+            if (null != interpretation) {
+                return createOkResponse(interpretation);
+        		
             } else {
                 return createOkResponse("no results were generated");
             }
         } catch (Exception exc) {
             return createErrorResponse(exc);
-        }
+        }*/
     }
 
     @GET
