@@ -34,9 +34,9 @@ import org.opencb.opencga.core.models.Job;
 import org.opencb.opencga.core.models.Sample;
 import org.opencb.opencga.storage.core.manager.variant.VariantCatalogQueryUtils;
 import org.opencb.opencga.storage.core.manager.variant.VariantStorageManager;
+import org.opencb.opencga.storage.core.metadata.ProjectMetadata;
 import org.opencb.opencga.storage.core.variant.VariantStorageEngine;
 import org.opencb.opencga.storage.core.variant.adaptors.VariantField;
-import org.opencb.opencga.storage.core.variant.adaptors.VariantQueryParam;
 import org.opencb.opencga.storage.core.variant.adaptors.VariantQueryUtils;
 import org.opencb.opencga.storage.core.variant.analysis.VariantSampleFilter;
 import org.opencb.opencga.storage.core.variant.annotation.VariantAnnotationManager;
@@ -258,6 +258,7 @@ public class VariantAnalysisWSService extends AnalysisWSService {
             @ApiImplicitParam(name = "proteinKeyword", value = ANNOT_PROTEIN_KEYWORD_DESCR, dataType = "string", paramType = "query"),
             @ApiImplicitParam(name = "drug", value = ANNOT_DRUG_DESCR, dataType = "string", paramType = "query"),
             @ApiImplicitParam(name = "functionalScore", value = ANNOT_FUNCTIONAL_SCORE_DESCR, dataType = "string", paramType = "query"),
+            @ApiImplicitParam(name = "clinicalSignificance", value = ANNOT_CLINICAL_SIGNIFICANCE_DESCR, dataType = "string", paramType = "query"),
             @ApiImplicitParam(name = "customAnnotation", value = CUSTOM_ANNOTATION_DESCR, dataType = "string", paramType = "query"),
 
             // WARN: Only available in Solr
@@ -472,8 +473,8 @@ public class VariantAnalysisWSService extends AnalysisWSService {
     }
 
     @GET
-    @Path("/annotation/{name}/query")
-    @ApiOperation(value = "", position = 15, response = VariantAnnotation[].class)
+    @Path("/annotation/query")
+    @ApiOperation(value = "Query variant annotations from any saved versions", position = 15, response = VariantAnnotation[].class)
     @ApiImplicitParams({
             @ApiImplicitParam(name = QueryOptions.INCLUDE, value = "Fields included in the response, whole JSON path must be provided", example = "name,attributes", dataType = "string", paramType = "query"),
             @ApiImplicitParam(name = QueryOptions.EXCLUDE, value = "Fields excluded in the response, whole JSON path must be provided", example = "id,status", dataType = "string", paramType = "query"),
@@ -485,7 +486,7 @@ public class VariantAnalysisWSService extends AnalysisWSService {
             @ApiImplicitParam(name = "id", value = ID_DESCR, dataType = "string", paramType = "query"),
 
     })
-    public Response getAnnotation(@ApiParam(value = "") @DefaultValue(VariantAnnotationManager.LATEST) @PathParam("name") String name) {
+    public Response getAnnotation(@ApiParam(value = "Annotation identifier") @DefaultValue(VariantAnnotationManager.CURRENT) @QueryParam("annotationId") String annotationId) {
         logger.info("limit {} , skip {}", count, limit, skip);
         try {
             // Get all query options
@@ -495,8 +496,22 @@ public class VariantAnalysisWSService extends AnalysisWSService {
             logger.info("query " + query.toJson());
             logger.info("queryOptions " + queryOptions.toJson());
 
-            QueryResult<VariantAnnotation> result = variantManager.getAnnotation(name, query, queryOptions, sessionId);
+            QueryResult<VariantAnnotation> result = variantManager.getAnnotation(annotationId, query, queryOptions, sessionId);
 
+            return createOkResponse(result);
+        } catch (Exception e) {
+            return createErrorResponse(e);
+        }
+    }
+
+    @GET
+    @Path("/annotation/metadata")
+    @ApiOperation(value = "Read variant annotations metadata from any saved versions", position = 15, response = VariantAnnotation[].class)
+    public Response getAnnotationMetadata(@ApiParam(value = "Annotation identifier") @QueryParam("annotationId") String annotationId,
+                                          @ApiParam(value = VariantCatalogQueryUtils.PROJECT_DESC) @QueryParam("project") String project) {
+        try {
+            QueryResult<ProjectMetadata.VariantAnnotationMetadata> result =
+                    variantManager.getAnnotationMetadata(annotationId, project, sessionId);
             return createOkResponse(result);
         } catch (Exception e) {
             return createErrorResponse(e);

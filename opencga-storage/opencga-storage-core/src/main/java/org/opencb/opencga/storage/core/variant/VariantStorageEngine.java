@@ -80,6 +80,7 @@ import java.util.stream.Collectors;
 import static org.opencb.opencga.storage.core.variant.VariantStorageEngine.Options.*;
 import static org.opencb.opencga.storage.core.variant.adaptors.VariantQueryParam.ANNOT_CLINICAL_SIGNIFICANCE;
 import static org.opencb.opencga.storage.core.variant.adaptors.VariantQueryParam.ID;
+import static org.opencb.opencga.storage.core.variant.adaptors.VariantQueryUtils.addDefaultLimit;
 import static org.opencb.opencga.storage.core.variant.annotation.annotators.AbstractCellBaseVariantAnnotator.toCellBaseSpeciesName;
 import static org.opencb.opencga.storage.core.variant.search.solr.VariantSearchManager.SEARCH_ENGINE_ID;
 import static org.opencb.opencga.storage.core.variant.search.solr.VariantSearchUtils.*;
@@ -365,16 +366,42 @@ public abstract class VariantStorageEngine extends StorageEngine<VariantDBAdapto
         }
     }
 
-    public void createAnnotationSnapshot(String name, ObjectMap params) throws StorageEngineException, VariantAnnotatorException {
-        newVariantAnnotationManager(params).createAnnotationSnapshot(name, params);
+    public void saveAnnotation(String name, ObjectMap params) throws StorageEngineException, VariantAnnotatorException {
+        newVariantAnnotationManager(params).saveAnnotation(name, params);
     }
 
-    public void deleteAnnotationSnapshot(String name, ObjectMap params) throws StorageEngineException, VariantAnnotatorException {
-        newVariantAnnotationManager(params).deleteAnnotationSnapshot(name, params);
+    public void deleteAnnotation(String name, ObjectMap params) throws StorageEngineException, VariantAnnotatorException {
+        newVariantAnnotationManager(params).deleteAnnotation(name, params);
     }
 
     public QueryResult<VariantAnnotation> getAnnotation(String name, Query query, QueryOptions options) throws StorageEngineException {
+        options = addDefaultLimit(options);
         return getDBAdaptor().getAnnotation(name, query, options);
+    }
+
+    public QueryResult<ProjectMetadata.VariantAnnotationMetadata> getAnnotationMetadata(String name) throws StorageEngineException {
+        QueryResult<ProjectMetadata> queryResult = getStudyConfigurationManager().getProjectMetadata();
+        ProjectMetadata.VariantAnnotationSets annotation = queryResult.first().getAnnotation();
+        List<ProjectMetadata.VariantAnnotationMetadata> list;
+        if (StringUtils.isEmpty(name) || VariantQueryUtils.ALL.equals(name)) {
+            list = new ArrayList<>(annotation.getSaved().size() + 1);
+            if (annotation.getCurrent() != null) {
+                list.add(annotation.getCurrent());
+            }
+            list.addAll(annotation.getSaved());
+        } else {
+            list = new ArrayList<>();
+            for (String annotationName : name.split(",")) {
+                if (VariantAnnotationManager.CURRENT.equalsIgnoreCase(annotationName)) {
+                    if (annotation.getCurrent() != null) {
+                        list.add(annotation.getCurrent());
+                    }
+                } else {
+                    list.add(annotation.getSaved(annotationName));
+                }
+            }
+        }
+        return new QueryResult<>(name, queryResult.getDbTime(), list.size(), list.size(), null, null, list);
     }
 
     /**
