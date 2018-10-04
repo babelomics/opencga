@@ -3,19 +3,17 @@ package org.opencb.opencga.catalog.managers;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.bson.Document;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import org.opencb.biodata.models.pedigree.IndividualProperty;
 import org.opencb.commons.datastore.core.ObjectMap;
 import org.opencb.commons.datastore.core.Query;
 import org.opencb.commons.datastore.core.QueryOptions;
 import org.opencb.commons.datastore.core.QueryResult;
 import org.opencb.commons.datastore.core.result.WriteResult;
-import org.opencb.commons.test.GenericTest;
-import org.opencb.commons.utils.StringUtils;
-import org.opencb.opencga.catalog.db.api.*;
+import org.opencb.opencga.catalog.db.api.DBIterator;
+import org.opencb.opencga.catalog.db.api.IndividualDBAdaptor;
+import org.opencb.opencga.catalog.db.api.ProjectDBAdaptor;
+import org.opencb.opencga.catalog.db.api.SampleDBAdaptor;
 import org.opencb.opencga.catalog.exceptions.CatalogException;
 import org.opencb.opencga.catalog.utils.CatalogAnnotationsValidatorTest;
 import org.opencb.opencga.catalog.utils.Constants;
@@ -27,15 +25,14 @@ import org.opencb.opencga.core.models.acls.permissions.SampleAclEntry;
 import org.opencb.opencga.core.models.summaries.FeatureCount;
 import org.opencb.opencga.core.models.summaries.VariableSetSummary;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.nio.file.Paths;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import static org.junit.Assert.*;
 import static org.opencb.opencga.catalog.db.api.SampleDBAdaptor.QueryParams.ANNOTATION;
+import static org.opencb.opencga.core.common.JacksonUtils.getDefaultObjectMapper;
 
 public class SampleManagerTest extends AbstractManagerTest {
 
@@ -215,7 +212,7 @@ public class SampleManagerTest extends AbstractManagerTest {
         AnnotationSet annotationSet = new AnnotationSet("annotation1", vs1.getId(), annotations);
         AnnotationSet annotationSet1 = new AnnotationSet("annotation2", vs1.getId(), annotations);
 
-        ObjectMapper jsonObjectMapper = new ObjectMapper();
+        ObjectMapper jsonObjectMapper = getDefaultObjectMapper();
         ObjectMap updateAnnotation = new ObjectMap()
                 // Update the annotation values
                 .append(SampleDBAdaptor.QueryParams.ANNOTATION_SETS.key(), Arrays.asList(
@@ -245,7 +242,10 @@ public class SampleManagerTest extends AbstractManagerTest {
                 null, Collections.emptyMap()));
         variables.add(new Variable("HEIGHT", "", "", Variable.VariableType.DOUBLE, "", false, false, Collections.emptyList(), 0, "",
                 "", null, Collections.emptyMap()));
-        VariableSet vs1 = catalogManager.getStudyManager().createVariableSet(studyFqn, "vs1", "vs1", false, false, "", null, variables, sessionIdUser).first();
+        variables.add(new Variable("OTHER", "", "", Variable.VariableType.OBJECT, null, false, false, null, 1, "", "", null,
+                Collections.emptyMap()));
+        VariableSet vs1 = catalogManager.getStudyManager().createVariableSet(studyFqn, "vs1", "vs1", false, false, "", null, variables,
+                sessionIdUser).first();
 
         ObjectMap annotations = new ObjectMap()
                 .append("var_name", "Joe")
@@ -253,7 +253,7 @@ public class SampleManagerTest extends AbstractManagerTest {
                 .append("HEIGHT", 180);
         AnnotationSet annotationSet = new AnnotationSet("annotation1", vs1.getId(), annotations);
 
-        ObjectMapper jsonObjectMapper = new ObjectMapper();
+        ObjectMapper jsonObjectMapper = getDefaultObjectMapper();
         ObjectMap updateAnnotation = new ObjectMap()
                 // Update the annotation values
                 .append(SampleDBAdaptor.QueryParams.ANNOTATION_SETS.key(), Arrays.asList(
@@ -690,7 +690,7 @@ public class SampleManagerTest extends AbstractManagerTest {
         assertEquals(1, samples.size());
 
         query.put(SampleDBAdaptor.QueryParams.ANNOTATION.key(), vs1.getId() + ":nestedObject.stringList=lo,lu,LL;" + vs1.getId()
-                        + ":nestedObject.object.string=my value");
+                + ":nestedObject.object.string=my value");
         samples = catalogManager.getSampleManager().get(studyFqn, query, null, sessionIdUser).getResult();
         assertEquals(1, samples.size());
 
@@ -839,7 +839,7 @@ public class SampleManagerTest extends AbstractManagerTest {
 
         Individual ind = new Individual()
                 .setId("INDIVIDUAL_1")
-                .setSex(Individual.Sex.UNKNOWN);
+                .setSex(IndividualProperty.Sex.UNKNOWN);
         ind.setAnnotationSets(Collections.singletonList(annotationSet));
         ind = catalogManager.getIndividualManager().create(studyFqn, ind, QueryOptions.empty(), sessionIdUser).first();
 
@@ -1106,6 +1106,64 @@ public class SampleManagerTest extends AbstractManagerTest {
         sampleQueryResult = catalogManager.getSampleManager().search(studyFqn,
                 new Query().append(SampleDBAdaptor.QueryParams.INDIVIDUAL.key(), "Individual2"), QueryOptions.empty(), sessionIdUser);
         assertEquals(0, sampleQueryResult.getNumResults());
+    }
+
+    @Test
+    public void searchSamplesDifferentVersions() throws CatalogException {
+        catalogManager.getSampleManager().create(studyFqn, new Sample().setId("sample1"), QueryOptions.empty(), sessionIdUser);
+        catalogManager.getSampleManager().create(studyFqn, new Sample().setId("sample2"), QueryOptions.empty(), sessionIdUser);
+        catalogManager.getSampleManager().create(studyFqn, new Sample().setId("sample3"), QueryOptions.empty(), sessionIdUser);
+
+        // Generate 4 versions of sample1
+        catalogManager.getSampleManager().update(studyFqn, "sample1", new ObjectMap(), new QueryOptions(Constants.INCREMENT_VERSION, true),
+                sessionIdUser);
+        catalogManager.getSampleManager().update(studyFqn, "sample1", new ObjectMap(), new QueryOptions(Constants.INCREMENT_VERSION, true),
+                sessionIdUser);
+        catalogManager.getSampleManager().update(studyFqn, "sample1", new ObjectMap(), new QueryOptions(Constants.INCREMENT_VERSION, true),
+                sessionIdUser);
+
+        // Generate 3 versions of sample2
+        catalogManager.getSampleManager().update(studyFqn, "sample2", new ObjectMap(), new QueryOptions(Constants.INCREMENT_VERSION, true),
+                sessionIdUser);
+        catalogManager.getSampleManager().update(studyFqn, "sample2", new ObjectMap(), new QueryOptions(Constants.INCREMENT_VERSION, true),
+                sessionIdUser);
+
+        // Generate 1 versions of sample3
+        catalogManager.getSampleManager().update(studyFqn, "sample3", new ObjectMap(), new QueryOptions(Constants.INCREMENT_VERSION, true),
+                sessionIdUser);
+
+        Query query = new Query()
+                .append(SampleDBAdaptor.QueryParams.ID.key(), "sample1,sample2,sample3")
+                .append(SampleDBAdaptor.QueryParams.VERSION.key(), "3,2,1");
+        QueryResult<Sample> sampleQueryResult = catalogManager.getSampleManager().get(studyFqn, query, QueryOptions.empty(), sessionIdUser);
+        assertEquals(3, sampleQueryResult.getNumResults());
+        for (Sample sample : sampleQueryResult.getResult()) {
+            switch (sample.getId()) {
+                case "sample1":
+                    assertEquals(3, sample.getVersion());
+                    break;
+                case "sample2":
+                    assertEquals(2, sample.getVersion());
+                    break;
+                case "sample3":
+                    assertEquals(1, sample.getVersion());
+                    break;
+                default:
+                    fail("One of the three samples above should always be present");
+            }
+        }
+
+        query.put(SampleDBAdaptor.QueryParams.VERSION.key(), "2");
+        sampleQueryResult = catalogManager.getSampleManager().get(studyFqn, query, QueryOptions.empty(), sessionIdUser);
+        assertEquals(3, sampleQueryResult.getNumResults());
+        sampleQueryResult.getResult().forEach(
+                s -> assertEquals(2, s.getVersion())
+        );
+
+        query.put(SampleDBAdaptor.QueryParams.VERSION.key(), "1,2");
+        thrown.expect(CatalogException.class);
+        thrown.expectMessage("size of the array");
+        catalogManager.getSampleManager().get(studyFqn, query, QueryOptions.empty(), sessionIdUser);
     }
 
     @Test

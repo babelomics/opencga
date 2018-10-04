@@ -36,7 +36,7 @@ import org.opencb.commons.datastore.core.ObjectMap;
 import org.opencb.commons.datastore.core.Query;
 import org.opencb.commons.datastore.core.QueryOptions;
 import org.opencb.commons.datastore.core.QueryResult;
-import org.opencb.commons.datastore.core.result.FacetedQueryResult;
+import org.opencb.commons.datastore.core.result.FacetQueryResult;
 import org.opencb.commons.utils.CollectionUtils;
 import org.opencb.commons.utils.FileUtils;
 import org.opencb.opencga.core.common.TimeUtils;
@@ -47,7 +47,6 @@ import org.opencb.opencga.storage.app.cli.client.options.StorageVariantCommandOp
 import org.opencb.opencga.storage.core.StorageEngineFactory;
 import org.opencb.opencga.storage.core.config.StorageEngineConfiguration;
 import org.opencb.opencga.storage.core.exceptions.StorageEngineException;
-import org.opencb.opencga.storage.core.exceptions.VariantSearchException;
 import org.opencb.opencga.storage.core.metadata.ProjectMetadata;
 import org.opencb.opencga.storage.core.variant.VariantStorageEngine;
 import org.opencb.opencga.storage.core.variant.VariantStoragePipeline;
@@ -71,12 +70,12 @@ import java.nio.file.Paths;
 import java.util.*;
 import java.util.function.Function;
 
-import static org.opencb.opencga.storage.app.cli.client.options.StorageVariantCommandOptions.GenericAnnotationMetadataCommandOptions.ANNOTATION_METADATA_COMMAND;
-import static org.opencb.opencga.storage.app.cli.client.options.StorageVariantCommandOptions.GenericAnnotationSaveCommandOptions.ANNOTATION_SAVE_COMMAND;
-import static org.opencb.opencga.storage.app.cli.client.options.StorageVariantCommandOptions.GenericAnnotationDeleteCommandOptions.ANNOTATION_DELETE_COMMAND;
 import static org.opencb.opencga.storage.app.cli.client.options.StorageVariantCommandOptions.FillGapsCommandOptions.FILL_GAPS_COMMAND;
 import static org.opencb.opencga.storage.app.cli.client.options.StorageVariantCommandOptions.FillMissingCommandOptions.FILL_MISSING_COMMAND;
+import static org.opencb.opencga.storage.app.cli.client.options.StorageVariantCommandOptions.GenericAnnotationDeleteCommandOptions.ANNOTATION_DELETE_COMMAND;
+import static org.opencb.opencga.storage.app.cli.client.options.StorageVariantCommandOptions.GenericAnnotationMetadataCommandOptions.ANNOTATION_METADATA_COMMAND;
 import static org.opencb.opencga.storage.app.cli.client.options.StorageVariantCommandOptions.GenericAnnotationQueryCommandOptions.ANNOTATION_QUERY_COMMAND;
+import static org.opencb.opencga.storage.app.cli.client.options.StorageVariantCommandOptions.GenericAnnotationSaveCommandOptions.ANNOTATION_SAVE_COMMAND;
 import static org.opencb.opencga.storage.app.cli.client.options.StorageVariantCommandOptions.VariantRemoveCommandOptions.VARIANT_REMOVE_COMMAND;
 
 /**
@@ -209,7 +208,7 @@ public class VariantCommandExecutor extends CommandExecutor {
                 logger.error("Subcommand not valid");
                 break;
         }
-
+        variantStorageEngine.close();
     }
 
     private void index() throws URISyntaxException, IOException, StorageEngineException, FileFormatException {
@@ -244,7 +243,7 @@ public class VariantCommandExecutor extends CommandExecutor {
 //                    indexVariantsCommandOptions.studyId, indexVariantsCommandOptions.study, indexVariantsCommandOptions.studyType,
 // indexVariantsCommandOptions.aggregated);
 
-        /** Add CLi options to the variant options **/
+        /* Add CLi options to the variant options */
         ObjectMap params = storageConfiguration.getVariant().getOptions();
         params.put(VariantStorageEngine.Options.MERGE_MODE.key(), indexVariantsCommandOptions.merge);
         params.put(VariantStorageEngine.Options.STUDY.key(), indexVariantsCommandOptions.study);
@@ -268,6 +267,7 @@ public class VariantCommandExecutor extends CommandExecutor {
         params.put(VariantStorageEngine.Options.RESUME.key(), indexVariantsCommandOptions.resume);
         params.put(VariantStorageEngine.Options.LOAD_SPLIT_DATA.key(), indexVariantsCommandOptions.loadSplitData);
         params.put(VariantStorageEngine.Options.POST_LOAD_CHECK_SKIP.key(), indexVariantsCommandOptions.skipPostLoadCheck);
+        params.put(VariantStorageEngine.Options.INDEX_SEARCH.key(), indexVariantsCommandOptions.indexSearch);
 
         if (indexVariantsCommandOptions.aggregationMappingFile != null) {
             // TODO move this options to new configuration.yml
@@ -287,29 +287,19 @@ public class VariantCommandExecutor extends CommandExecutor {
         logger.debug("Configuration options: {}", params.toJson());
 
 
-        /** Execute ETL steps **/
+        /* Execute ETL steps */
         boolean doExtract, doTransform, doLoad;
 
-
-        if (!indexVariantsCommandOptions.indexSearch) {
-            if (!indexVariantsCommandOptions.load && !indexVariantsCommandOptions.transform) {
-                doExtract = true;
-                doTransform = true;
-                doLoad = true;
-            } else {
-                doExtract = indexVariantsCommandOptions.transform;
-                doTransform = indexVariantsCommandOptions.transform;
-                doLoad = indexVariantsCommandOptions.load;
-            }
-
-            variantStorageEngine.index(inputUris, outdirUri, doExtract, doTransform, doLoad);
+        if (!indexVariantsCommandOptions.load && !indexVariantsCommandOptions.transform) {
+            doExtract = true;
+            doTransform = true;
+            doLoad = true;
         } else {
-            try {
-                variantStorageEngine.searchIndex();
-            } catch (VariantSearchException e) {
-                e.printStackTrace();
-            }
+            doExtract = indexVariantsCommandOptions.transform;
+            doTransform = indexVariantsCommandOptions.transform;
+            doLoad = indexVariantsCommandOptions.load;
         }
+        variantStorageEngine.index(inputUris, outdirUri, doExtract, doTransform, doLoad);
     }
 
     private void remove() throws Exception {
@@ -750,7 +740,7 @@ public class VariantCommandExecutor extends CommandExecutor {
         if (searchOptions.index) {
             querying = false;
             Query query = VariantQueryCommandUtils.parseQuery(searchOptions, new Query());
-            variantStorageEngine.searchIndex(query, options);
+            variantStorageEngine.searchIndex(query, options, searchOptions.overwrite);
         }
 
         String mode = variantStorageEngine.getConfiguration().getSearch().getMode();
@@ -779,21 +769,11 @@ public class VariantCommandExecutor extends CommandExecutor {
                     // TODO: move this to the function mentioned in the previous TODO
                     queryOptions.put(QueryOptions.FACET, searchOptions.facet);
                     queryOptions.put(QueryOptions.FACET_RANGE, searchOptions.facetRange);
-                    FacetedQueryResult facetedQueryResult = variantSearchManager.facetedQuery(dbName, query, queryOptions);
-                    if (facetedQueryResult.getResult().getFields() != null
-                            && CollectionUtils.isNotEmpty(facetedQueryResult.getResult().getFields())) {
-                        System.out.println("Faceted fields (" + facetedQueryResult.getResult().getFields().size() + "):");
-                        facetedQueryResult.getResult().getFields().forEach(f -> System.out.println(f.toString()));
-                    }
-                    if (facetedQueryResult.getResult().getRanges() != null
-                            && CollectionUtils.isNotEmpty(facetedQueryResult.getResult().getRanges())) {
-                        System.out.println("Faceted ranges (" + facetedQueryResult.getResult().getRanges().size() + "):");
-                        facetedQueryResult.getResult().getRanges().forEach(f -> System.out.println(f.toString()));
-                    }
-                    if (facetedQueryResult.getResult().getIntersections() != null
-                            && CollectionUtils.isNotEmpty(facetedQueryResult.getResult().getIntersections())) {
-                        System.out.println("Faceted intersections (" + facetedQueryResult.getResult().getIntersections().size() + "):");
-                        facetedQueryResult.getResult().getIntersections().forEach(f -> System.out.println(f.toString()));
+                    FacetQueryResult facetedQueryResult = variantSearchManager.facetedQuery(dbName, query, queryOptions);
+                    if (facetedQueryResult.getResult().getFacetFields() != null
+                            && CollectionUtils.isNotEmpty(facetedQueryResult.getResult().getFacetFields())) {
+                        System.out.println("Faceted fields (" + facetedQueryResult.getResult().getFacetFields().size() + "):");
+                        facetedQueryResult.getResult().getFacetFields().forEach(f -> System.out.println(f.toString()));
                     }
                 } else {
                     queryOptions.put(QueryOptions.LIMIT, Integer.MAX_VALUE);

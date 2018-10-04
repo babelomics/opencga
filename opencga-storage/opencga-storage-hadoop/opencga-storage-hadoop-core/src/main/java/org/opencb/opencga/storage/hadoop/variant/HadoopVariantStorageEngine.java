@@ -25,8 +25,11 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.hbase.io.compress.Compression.Algorithm;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.solr.common.SolrException;
 import org.opencb.biodata.models.variant.Variant;
 import org.opencb.biodata.models.variant.VariantFileMetadata;
 import org.opencb.biodata.models.variant.avro.VariantType;
@@ -39,7 +42,6 @@ import org.opencb.opencga.storage.core.config.DatabaseCredentials;
 import org.opencb.opencga.storage.core.config.StorageEtlConfiguration;
 import org.opencb.opencga.storage.core.exceptions.StorageEngineException;
 import org.opencb.opencga.storage.core.exceptions.StoragePipelineException;
-import org.opencb.opencga.storage.core.exceptions.VariantSearchException;
 import org.opencb.opencga.storage.core.metadata.BatchFileOperation;
 import org.opencb.opencga.storage.core.metadata.StudyConfiguration;
 import org.opencb.opencga.storage.core.metadata.StudyConfigurationManager;
@@ -50,12 +52,14 @@ import org.opencb.opencga.storage.core.variant.VariantStoragePipeline;
 import org.opencb.opencga.storage.core.variant.adaptors.VariantDBAdaptor;
 import org.opencb.opencga.storage.core.variant.adaptors.VariantQueryException;
 import org.opencb.opencga.storage.core.variant.adaptors.VariantQueryParam;
+import org.opencb.opencga.storage.core.variant.adaptors.VariantQueryUtils;
 import org.opencb.opencga.storage.core.variant.adaptors.iterators.VariantDBIterator;
 import org.opencb.opencga.storage.core.variant.annotation.VariantAnnotationManager;
 import org.opencb.opencga.storage.core.variant.annotation.annotators.VariantAnnotator;
 import org.opencb.opencga.storage.core.variant.io.VariantExporter;
 import org.opencb.opencga.storage.core.variant.io.VariantReaderUtils;
-import org.opencb.opencga.storage.core.variant.search.solr.VariantSearchManager;
+import org.opencb.opencga.storage.core.variant.search.solr.VariantSearchLoadListener;
+import org.opencb.opencga.storage.core.variant.search.solr.VariantSearchLoadResult;
 import org.opencb.opencga.storage.core.variant.stats.VariantStatisticsManager;
 import org.opencb.opencga.storage.hadoop.auth.HBaseCredentials;
 import org.opencb.opencga.storage.hadoop.utils.DeleteHBaseColumnDriver;
@@ -76,6 +80,7 @@ import org.opencb.opencga.storage.hadoop.variant.index.sample.SampleIndexDBAdapt
 import org.opencb.opencga.storage.hadoop.variant.index.sample.SampleIndexQuery;
 import org.opencb.opencga.storage.hadoop.variant.io.HadoopVariantExporter;
 import org.opencb.opencga.storage.hadoop.variant.metadata.HBaseVariantStorageMetadataDBAdaptorFactory;
+import org.opencb.opencga.storage.hadoop.variant.search.HadoopVariantSearchLoadListener;
 import org.opencb.opencga.storage.hadoop.variant.stats.HadoopDefaultVariantStatisticsManager;
 import org.opencb.opencga.storage.hadoop.variant.stats.HadoopMRVariantStatisticsManager;
 import org.opencb.opencga.storage.hadoop.variant.utils.HBaseVariantTableNameGenerator;
@@ -127,19 +132,27 @@ public class HadoopVariantStorageEngine extends VariantStorageEngine {
     // Merge variants operation status. Skip merge and run post-load/post-merge step if status is DONE
     public static final String HADOOP_LOAD_VARIANT_STATUS = "hadoop.load.variant.status";
     //Other files to be loaded from Archive to Variant
-    @Deprecated public static final String HADOOP_LOAD_VARIANT_PENDING_FILES = "opencga.storage.hadoop.load.pending.files";
+    @Deprecated
+    public static final String HADOOP_LOAD_VARIANT_PENDING_FILES = "opencga.storage.hadoop.load.pending.files";
     public static final String INTERMEDIATE_HDFS_DIRECTORY = "opencga.storage.hadoop.intermediate.hdfs.directory";
 
     public static final String HADOOP_LOAD_ARCHIVE_BATCH_SIZE = "hadoop.load.archive.batch.size";
     public static final String HADOOP_LOAD_VARIANT_BATCH_SIZE = "hadoop.load.variant.batch.size";
-    @Deprecated public static final String HADOOP_LOAD_DIRECT = "hadoop.load.direct";
-    @Deprecated public static final boolean HADOOP_LOAD_DIRECT_DEFAULT = true;
+    @Deprecated
+    public static final String HADOOP_LOAD_DIRECT = "hadoop.load.direct";
+    @Deprecated
+    public static final boolean HADOOP_LOAD_DIRECT_DEFAULT = true;
 
-    @Deprecated public static final String MERGE_ARCHIVE_SCAN_BATCH_SIZE = "opencga.storage.hadoop.hbase.merge.archive.scan.batchsize";
-    @Deprecated public static final int DEFAULT_MERGE_ARCHIVE_SCAN_BATCH_SIZE = 500;
-    @Deprecated public static final String MERGE_COLLAPSE_DELETIONS      = "opencga.storage.hadoop.hbase.merge.collapse-deletions";
-    @Deprecated public static final boolean DEFAULT_MERGE_COLLAPSE_DELETIONS = false;
-    @Deprecated public static final String MERGE_LOAD_SPECIFIC_PUT       = "opencga.storage.hadoop.hbase.merge.use_specific_put";
+    @Deprecated
+    public static final String MERGE_ARCHIVE_SCAN_BATCH_SIZE = "opencga.storage.hadoop.hbase.merge.archive.scan.batchsize";
+    @Deprecated
+    public static final int DEFAULT_MERGE_ARCHIVE_SCAN_BATCH_SIZE = 500;
+    @Deprecated
+    public static final String MERGE_COLLAPSE_DELETIONS = "opencga.storage.hadoop.hbase.merge.collapse-deletions";
+    @Deprecated
+    public static final boolean DEFAULT_MERGE_COLLAPSE_DELETIONS = false;
+    @Deprecated
+    public static final String MERGE_LOAD_SPECIFIC_PUT = "opencga.storage.hadoop.hbase.merge.use_specific_put";
 
     //upload HBase jars and jars for any of the configured job classes via the distributed cache (tmpjars).
     public static final String MAPREDUCE_ADD_DEPENDENCY_JARS = "opencga.mapreduce.addDependencyJars";
@@ -152,13 +165,12 @@ public class HadoopVariantStorageEngine extends VariantStorageEngine {
     public static final String EXPECTED_FILES_NUMBER = "expected_files_number";
     public static final int DEFAULT_EXPECTED_FILES_NUMBER = 5000;
 
-    public static final String LOADED_GENOTYPES = "loadedGenotypes";
-
     // Variant table configuration
     public static final String VARIANT_TABLE_COMPRESSION = "opencga.variant.table.compression";
     public static final String VARIANT_TABLE_PRESPLIT_SIZE = "opencga.variant.table.presplit.size";
     // Do not create phoenix indexes. Testing purposes only
     public static final String VARIANT_TABLE_INDEXES_SKIP = "opencga.variant.table.indexes.skip";
+    public static final String VARIANT_TABLE_LOAD_REFERENCE = "opencga.variant.table.load.reference";
 
     // Archive table configuration
     public static final String ARCHIVE_TABLE_COMPRESSION = "opencga.archive.table.compression";
@@ -169,6 +181,7 @@ public class HadoopVariantStorageEngine extends VariantStorageEngine {
     public static final String ARCHIVE_ROW_KEY_SEPARATOR = "opencga.archive.row_key_sep";
     public static final String ARCHIVE_FILE_BATCH_SIZE = "opencga.archive.file_batch_size";
     public static final int DEFAULT_ARCHIVE_FILE_BATCH_SIZE = 1000;
+    public static final String ARCHIVE_FIELDS = "opencga.archive.fields";
 
     // Sample index table configuration
     public static final String SAMPLE_INDEX_TABLE_COMPRESSION = "opencga.sample-index.table.compression";
@@ -183,7 +196,12 @@ public class HadoopVariantStorageEngine extends VariantStorageEngine {
     public static final EnumSet<VariantType> TARGET_VARIANT_TYPE_SET = EnumSet.of(
             VariantType.SNV, VariantType.SNP,
             VariantType.INDEL, /* VariantType.INSERTION, VariantType.DELETION,*/
-            VariantType.MNV, VariantType.MNP);
+            VariantType.MNV, VariantType.MNP,
+            VariantType.INSERTION, VariantType.DELETION,
+            VariantType.CNV, VariantType.DUPLICATION, VariantType.TRANSLOCATION,
+            VariantType.BREAKEND,
+            VariantType.SV, VariantType.SYMBOLIC
+    );
 
     public static final String FILE_ID = "fileId";
     public static final String STUDY_ID = "studyId";
@@ -316,6 +334,7 @@ public class HadoopVariantStorageEngine extends VariantStorageEngine {
             if (doLoad) {
                 annotateLoadedFiles(outdirUri, inputFiles, concurrResult, getOptions());
                 calculateStatsForLoadedFiles(outdirUri, inputFiles, concurrResult, getOptions());
+                searchIndexLoadedFiles(inputFiles, getOptions());
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -373,10 +392,30 @@ public class HadoopVariantStorageEngine extends VariantStorageEngine {
     }
 
     @Override
-    public void searchIndex(Query query, QueryOptions queryOptions) throws StorageEngineException, IOException, VariantSearchException {
+    public VariantSearchLoadResult searchIndex(Query query, QueryOptions queryOptions, boolean overwrite)
+            throws StorageEngineException, IOException, SolrException {
         queryOptions = queryOptions == null ? new QueryOptions() : new QueryOptions(queryOptions);
         queryOptions.putIfAbsent(VariantHadoopDBAdaptor.NATIVE, true);
-        super.searchIndex(query, queryOptions);
+        return super.searchIndex(query, queryOptions, overwrite);
+    }
+
+    @Override
+    protected VariantDBIterator getVariantsToIndex(boolean overwrite, Query query, QueryOptions queryOptions, VariantDBAdaptor dbAdaptor)
+            throws StorageEngineException {
+        if (!overwrite) {
+            query.put(VariantQueryUtils.VARIANTS_TO_INDEX.key(), true);
+            logger.info("Column intersect!");
+//        queryOptions.put("multiIteratorBatchSize", 1000);
+            return (VariantDBIterator) getOrIteratorHBaseColumnIntersect(query, queryOptions, true);
+        } else {
+            logger.info("Get variants to index");
+            return super.getVariantsToIndex(overwrite, query, queryOptions, dbAdaptor);
+        }
+    }
+
+    @Override
+    protected VariantSearchLoadListener newVariantSearchLoadListener() throws StorageEngineException {
+        return new HadoopVariantSearchLoadListener(getDBAdaptor());
     }
 
     @Override
@@ -573,7 +612,7 @@ public class HadoopVariantStorageEngine extends VariantStorageEngine {
 
         VariantHadoopDBAdaptor dbAdaptor = getDBAdaptor();
         StudyConfigurationManager scm = dbAdaptor.getStudyConfigurationManager();
-        List<Integer> fileIds = preRemoveFiles(study, files);
+        List<Integer> fileIds = preRemoveFiles(study, files).getFileIds();
         final int studyId = scm.getStudyId(study, null);
 
 //        // Pre delete
@@ -603,6 +642,7 @@ public class HadoopVariantStorageEngine extends VariantStorageEngine {
             String archiveTable = getArchiveTableName(studyId);
             String variantsTable = getVariantTableName();
             String sampleIndexTable = getTableNameGenerator().getSampleIndexTableName(studyId);
+            options.put(DeleteHBaseColumnDriver.DELETE_HBASE_COLUMN_MAPPER_CLASS, MyDeleteHBaseColumnMapper.class.getName());
 
             long startTime = System.currentTimeMillis();
             logger.info("------------------------------------------------------");
@@ -789,7 +829,7 @@ public class HadoopVariantStorageEngine extends VariantStorageEngine {
         boolean doIntersectWithSearch = super.doIntersectWithSearch(query, options);
         if (doIntersectWithSearch) {
             if (!isValidParam(query, VariantQueryParam.ANNOT_TRAIT)
-                    && VariantSearchManager.UseSearchIndex.from(options).equals(VariantSearchManager.UseSearchIndex.AUTO)
+                    && VariantStorageEngine.UseSearchIndex.from(options).equals(VariantStorageEngine.UseSearchIndex.AUTO)
                     && doHBaseSampleIndexIntersect(query, options)) {
                 return false;
             }
@@ -982,10 +1022,10 @@ public class HadoopVariantStorageEngine extends VariantStorageEngine {
      * Intersect result of column hbase scan and full phoenix query.
      * Use {@link org.opencb.opencga.storage.core.variant.adaptors.iterators.MultiVariantDBIterator}.
      *
-     * @param query     Query
-     * @param options   Options
-     * @param iterator  Shall the resulting object be an iterator instead of a QueryResult
-     * @return          QueryResult or Iterator with the variants that matches the query
+     * @param query    Query
+     * @param options  Options
+     * @param iterator Shall the resulting object be an iterator instead of a QueryResult
+     * @return QueryResult or Iterator with the variants that matches the query
      * @throws StorageEngineException StorageEngineException
      */
     private Object getOrIteratorHBaseColumnIntersect(Query query, QueryOptions options, boolean iterator) throws StorageEngineException {
@@ -1005,7 +1045,9 @@ public class HadoopVariantStorageEngine extends VariantStorageEngine {
                 .append(QueryOptions.INCLUDE, Arrays.asList(CHROMOSOME, START, END, REFERENCE, ALTERNATE));
 
         scanQuery.putIfNotNull(STUDY.key(), query.get(STUDY.key()));
-        if (isValidParam(query, SAMPLE)) {
+        if (query.getBoolean(VARIANTS_TO_INDEX.key(), false)) {
+            scanQuery.put(VARIANTS_TO_INDEX.key(), true);
+        } else if (isValidParam(query, SAMPLE)) {
             // At any case, filter only by first sample
             // TODO: Use sample with less variants?
 
@@ -1169,4 +1211,25 @@ public class HadoopVariantStorageEngine extends VariantStorageEngine {
         }
     }
 
+    /**
+     * Created on 23/04/18.
+     *
+     * @author Jacobo Coll &lt;jacobo167@gmail.com&gt;
+     */
+    public static class MyDeleteHBaseColumnMapper extends DeleteHBaseColumnDriver.DeleteHBaseColumnMapper {
+
+        private byte[] columnFamily;
+
+        @Override
+        protected void setup(Context context) throws IOException, InterruptedException {
+            super.setup(context);
+            columnFamily = new GenomeHelper(context.getConfiguration()).getColumnFamily();
+        }
+
+        @Override
+        protected void map(ImmutableBytesWritable key, Result result, Context context) throws IOException, InterruptedException {
+            super.map(key, result, context);
+    //        context.write(key, HadoopVariantSearchIndexUtils.addUnknownSyncStatus(new Put(result.getRow()), columnFamily));
+        }
+    }
 }

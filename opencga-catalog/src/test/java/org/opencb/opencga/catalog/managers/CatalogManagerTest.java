@@ -19,6 +19,7 @@ package org.opencb.opencga.catalog.managers;
 import com.mongodb.BasicDBObject;
 import org.junit.Ignore;
 import org.junit.Test;
+import org.opencb.biodata.models.pedigree.IndividualProperty;
 import org.opencb.commons.datastore.core.ObjectMap;
 import org.opencb.commons.datastore.core.Query;
 import org.opencb.commons.datastore.core.QueryOptions;
@@ -36,8 +37,6 @@ import org.opencb.opencga.core.models.acls.permissions.SampleAclEntry;
 import org.opencb.opencga.core.models.acls.permissions.StudyAclEntry;
 
 import javax.naming.NamingException;
-import java.io.DataOutputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Paths;
 import java.util.*;
@@ -48,6 +47,19 @@ import static org.hamcrest.CoreMatchers.containsString;
 import static org.junit.Assert.*;
 
 public class CatalogManagerTest extends AbstractManagerTest {
+
+    @Test
+    public void createStudyFailMoreThanOneProject() throws CatalogException {
+        catalogManager.getProjectManager().incrementRelease(project1, sessionIdUser);
+        catalogManager.getProjectManager().create("1000G2", "Project about some genomes", "", "ACME", "Homo sapiens",
+                null, null, "GRCh38", new QueryOptions(), sessionIdUser);
+
+        // Create a new study without providing the project. It should raise an error because the user owns more than one project
+        thrown.expect(CatalogException.class);
+        thrown.expectMessage("More than one project found");
+        catalogManager.getStudyManager().create(null, "phasexx", null, "Phase 1", Study.Type.TRIO, null, "Done", null, null, null, null,
+                null, null, null, null, sessionIdUser);
+    }
 
     @Test
     public void testAdminUserExists() throws Exception {
@@ -235,6 +247,16 @@ public class CatalogManagerTest extends AbstractManagerTest {
         String token = catalogManager.getUserManager().login("test", "test");
         QueryResult<Study> studyQueryResult = catalogManager.getStudyManager().get("user@1000G:phase1", QueryOptions.empty(), token);
         assertEquals(1, studyQueryResult.getNumResults());
+        assertTrue(studyQueryResult.first().getAttributes().isEmpty());
+
+        studyQueryResult = catalogManager.getStudyManager().get("user@1000G:phase1", new QueryOptions(DBAdaptor.INCLUDE_ACLS, true), token);
+        assertEquals(1, studyQueryResult.getNumResults());
+        assertTrue(!studyQueryResult.first().getAttributes().isEmpty());
+        assertTrue(studyQueryResult.first().getAttributes().containsKey("OPENCGA_ACL"));
+        List<Map<String, Object>> acls = (List<Map<String, Object>>) studyQueryResult.first().getAttributes().get("OPENCGA_ACL");
+        assertEquals(1, acls.size());
+        assertEquals("@group_cancer_some_thing_else", acls.get(0).get("member"));
+        assertTrue(!((List) acls.get(0).get("permissions")).isEmpty());
     }
 
     /**
@@ -297,8 +319,7 @@ public class CatalogManagerTest extends AbstractManagerTest {
 
         thrown.expect(CatalogException.class);
         thrown.expectMessage("not found");
-        catalogManager.getProjectManager().update(projectId, options, null, sessionIdUser2);
-
+        catalogManager.getProjectManager().update(projectId, options, null, sessionIdUser);
     }
 
     /**
@@ -723,7 +744,7 @@ public class CatalogManagerTest extends AbstractManagerTest {
                 new Variable("PHEN", "", Variable.VariableType.CATEGORICAL, "", true, false, Arrays.asList("CASE", "CONTROL"), 4, "", "",
                         null, Collections.<String, Object>emptyMap())
         ));
-        QueryResult<VariableSet> queryResult = catalogManager.getStudyManager().createVariableSet(study.getFqn(), "vs1", "vs1", true,
+        QueryResult<VariableSet> queryResult = catalogManager.getStudyManager().createVariableSet(studyFqn, "vs1", "vs1", true,
                 false, "", null, variables, sessionIdUser);
 
         assertEquals(1, queryResult.getResult().size());
@@ -1064,16 +1085,16 @@ public class CatalogManagerTest extends AbstractManagerTest {
         VariableSet variableSet = study.getVariableSets().get(0);
 
         String individualId1 = catalogManager.getIndividualManager().create(studyFqn, new Individual().setId("INDIVIDUAL_1")
-                .setKaryotypicSex(Individual.KaryotypicSex.UNKNOWN).setLifeStatus(Individual.LifeStatus.UNKNOWN)
-                        .setAffectationStatus(Individual.AffectationStatus.UNKNOWN), new QueryOptions(), sessionIdUser)
+                .setKaryotypicSex(IndividualProperty.KaryotypicSex.UNKNOWN).setLifeStatus(IndividualProperty.LifeStatus.UNKNOWN)
+                        .setAffectationStatus(IndividualProperty.AffectationStatus.UNKNOWN), new QueryOptions(), sessionIdUser)
                 .first().getId();
         String individualId2 = catalogManager.getIndividualManager().create(studyFqn, new Individual().setId("INDIVIDUAL_2")
-                .setKaryotypicSex(Individual.KaryotypicSex.UNKNOWN).setLifeStatus(Individual.LifeStatus.UNKNOWN)
-                        .setAffectationStatus(Individual.AffectationStatus.UNKNOWN), new QueryOptions(), sessionIdUser)
+                .setKaryotypicSex(IndividualProperty.KaryotypicSex.UNKNOWN).setLifeStatus(IndividualProperty.LifeStatus.UNKNOWN)
+                        .setAffectationStatus(IndividualProperty.AffectationStatus.UNKNOWN), new QueryOptions(), sessionIdUser)
                 .first().getId();
         String individualId3 = catalogManager.getIndividualManager().create(studyFqn, new Individual().setId("INDIVIDUAL_3")
-                .setKaryotypicSex(Individual.KaryotypicSex.UNKNOWN).setLifeStatus(Individual.LifeStatus.UNKNOWN)
-                        .setAffectationStatus(Individual.AffectationStatus.UNKNOWN), new QueryOptions(), sessionIdUser)
+                .setKaryotypicSex(IndividualProperty.KaryotypicSex.UNKNOWN).setLifeStatus(IndividualProperty.LifeStatus.UNKNOWN)
+                        .setAffectationStatus(IndividualProperty.AffectationStatus.UNKNOWN), new QueryOptions(), sessionIdUser)
                 .first().getId();
 
         catalogManager.getIndividualManager().update(studyFqn, individualId1, new ObjectMap()
@@ -1156,5 +1177,105 @@ public class CatalogManagerTest extends AbstractManagerTest {
         thrown.expectMessage("Invalid date of birth format");
         individualManager.update(studyFqn, individualQueryResult.first().getId(),
                 new ObjectMap(IndividualDBAdaptor.QueryParams.DATE_OF_BIRTH.key(), "198421"), QueryOptions.empty(), sessionIdUser);
+    }
+
+    @Test
+    public void testUpdateIndividuaParents() throws CatalogException {
+        IndividualManager individualManager = catalogManager.getIndividualManager();
+        individualManager.create(studyFqn, new Individual().setId("child"), QueryOptions.empty(), sessionIdUser);
+        individualManager.create(studyFqn, new Individual().setId("father"), QueryOptions.empty(), sessionIdUser);
+        individualManager.create(studyFqn, new Individual().setId("mother"), QueryOptions.empty(), sessionIdUser);
+
+        QueryResult<Individual> individualQueryResult = individualManager.update(studyFqn, "child", new ObjectMap()
+                        .append(IndividualDBAdaptor.QueryParams.FATHER.key(), new ObjectMap(IndividualDBAdaptor.QueryParams.ID.key(), "father"))
+                        .append(IndividualDBAdaptor.QueryParams.MOTHER.key(), new ObjectMap(IndividualDBAdaptor.QueryParams.ID.key(), "mother")),
+                QueryOptions.empty(), sessionIdUser);
+
+        assertEquals("mother", individualQueryResult.first().getMother().getId());
+        assertEquals(1, individualQueryResult.first().getMother().getVersion());
+
+        assertEquals("father", individualQueryResult.first().getFather().getId());
+        assertEquals(1, individualQueryResult.first().getFather().getVersion());
+    }
+
+    @Test
+    public void testGetIndividualWithSamples() throws CatalogException {
+        IndividualManager individualManager = catalogManager.getIndividualManager();
+        individualManager.create(studyFqn, new Individual().setId("individual1")
+                .setSamples(Arrays.asList(new Sample().setId("sample1"), new Sample().setId("sample2"), new Sample().setId("sample3"))),
+                QueryOptions.empty(), sessionIdUser);
+        individualManager.create(studyFqn, new Individual().setId("individual2")
+                        .setSamples(Arrays.asList(new Sample().setId("sample4"), new Sample().setId("sample5"), new Sample().setId("sample6"))),
+                QueryOptions.empty(), sessionIdUser);
+
+        QueryResult<Individual> search = individualManager.search(studyFqn, new Query(), QueryOptions.empty(), sessionIdUser);
+        assertEquals(2, search.getNumResults());
+        search.getResult().forEach(i -> {
+            assertEquals(3, i.getSamples().size());
+            assertTrue(org.apache.commons.lang3.StringUtils.isNotEmpty(i.getSamples().get(0).getCreationDate()));
+            if (i.getId().equals("individual1")) {
+                assertTrue(Arrays.asList("sample1", "sample2", "sample3").containsAll(
+                        i.getSamples().stream().map(Sample::getId).collect(Collectors.toList())
+                ));
+            } else {
+                assertTrue(Arrays.asList("sample4", "sample5", "sample6").containsAll(
+                        i.getSamples().stream().map(Sample::getId).collect(Collectors.toList())
+                ));
+            }
+        });
+
+        search = individualManager.search(studyFqn, new Query(), new QueryOptions(QueryOptions.EXCLUDE, "samples.creationDate"),
+                sessionIdUser);
+        assertEquals(2, search.getNumResults());
+        search.getResult().forEach(i -> {
+            assertEquals(3, i.getSamples().size());
+            assertTrue(org.apache.commons.lang3.StringUtils.isEmpty(i.getSamples().get(0).getCreationDate()));
+            if (i.getId().equals("individual1")) {
+                assertTrue(Arrays.asList("sample1", "sample2", "sample3").containsAll(
+                        i.getSamples().stream().map(Sample::getId).collect(Collectors.toList())
+                ));
+            } else {
+                assertTrue(Arrays.asList("sample4", "sample5", "sample6").containsAll(
+                        i.getSamples().stream().map(Sample::getId).collect(Collectors.toList())
+                ));
+            }
+        });
+
+        search = individualManager.search(studyFqn, new Query(), new QueryOptions(QueryOptions.INCLUDE, "samples.id"),
+                sessionIdUser);
+        assertEquals(2, search.getNumResults());
+        search.getResult().forEach(i -> {
+            assertEquals(3, i.getSamples().size());
+            assertTrue(org.apache.commons.lang3.StringUtils.isEmpty(i.getSamples().get(0).getCreationDate()));
+            if (i.getId().equals("individual1")) {
+                assertTrue(Arrays.asList("sample1", "sample2", "sample3").containsAll(
+                        i.getSamples().stream().map(Sample::getId).collect(Collectors.toList())
+                ));
+            } else {
+                assertTrue(Arrays.asList("sample4", "sample5", "sample6").containsAll(
+                        i.getSamples().stream().map(Sample::getId).collect(Collectors.toList())
+                ));
+            }
+        });
+
+
+        search = individualManager.search(studyFqn, new Query(), new QueryOptions(QueryOptions.INCLUDE, "id,creationDate,samples.id"),
+                sessionIdUser);
+        assertEquals(2, search.getNumResults());
+        search.getResult().forEach(i -> {
+            assertTrue(org.apache.commons.lang3.StringUtils.isNotEmpty(i.getCreationDate()));
+            assertTrue(org.apache.commons.lang3.StringUtils.isEmpty(i.getName()));
+            assertEquals(3, i.getSamples().size());
+            assertTrue(org.apache.commons.lang3.StringUtils.isEmpty(i.getSamples().get(0).getCreationDate()));
+            if (i.getId().equals("individual1")) {
+                assertTrue(Arrays.asList("sample1", "sample2", "sample3").containsAll(
+                        i.getSamples().stream().map(Sample::getId).collect(Collectors.toList())
+                ));
+            } else {
+                assertTrue(Arrays.asList("sample4", "sample5", "sample6").containsAll(
+                        i.getSamples().stream().map(Sample::getId).collect(Collectors.toList())
+                ));
+            }
+        });
     }
 }

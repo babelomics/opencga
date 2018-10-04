@@ -47,6 +47,7 @@ import org.opencb.opencga.storage.core.variant.VariantStoragePipeline;
 import org.opencb.opencga.storage.core.variant.adaptors.GenotypeClass;
 import org.opencb.opencga.storage.core.variant.adaptors.VariantQueryParam;
 import org.opencb.opencga.storage.core.variant.io.VariantReaderUtils;
+import org.opencb.opencga.storage.core.variant.transform.DiscardDuplicatedVariantsResolver;
 import org.opencb.opencga.storage.core.variant.transform.RemapVariantIdsTask;
 import org.opencb.opencga.storage.mongodb.variant.adaptors.VariantMongoDBAdaptor;
 import org.opencb.opencga.storage.mongodb.variant.exceptions.MongoVariantStorageEngineException;
@@ -75,8 +76,7 @@ import java.util.stream.Collectors;
 import static org.opencb.opencga.storage.core.metadata.StudyConfigurationManager.addBatchOperation;
 import static org.opencb.opencga.storage.core.metadata.StudyConfigurationManager.setStatus;
 import static org.opencb.opencga.storage.core.variant.VariantStorageEngine.Options;
-import static org.opencb.opencga.storage.core.variant.VariantStorageEngine.Options.LOAD_SPLIT_DATA;
-import static org.opencb.opencga.storage.core.variant.VariantStorageEngine.Options.POST_LOAD_CHECK_SKIP;
+import static org.opencb.opencga.storage.core.variant.VariantStorageEngine.Options.*;
 import static org.opencb.opencga.storage.mongodb.variant.MongoDBVariantStorageEngine.MongoDBVariantOptions.*;
 
 /**
@@ -293,18 +293,12 @@ public class MongoDBVariantStoragePipeline extends VariantStoragePipeline {
         try {
             //Reader
             DataReader<Variant> variantReader;
-            VariantDeduplicationTask duplicatedVariantsDetector = new VariantDeduplicationTask(list -> {
-                if (list.size() > 1) {
-                    logger.warn("Found {} duplicated variants for file {} in variant {}.", list.size(), fileId, list.get(0));
-                    return Collections.emptyList();
-                } else {
-                    throw new IllegalStateException("Unexpected list of " + list.size() + " duplicated variants : " + list);
-                }
-            });
+            VariantDeduplicationTask duplicatedVariantsDetector =
+                    new VariantDeduplicationTask(new DiscardDuplicatedVariantsResolver(fileId));
             variantReader = VariantReaderUtils.getVariantReader(Paths.get(inputUri), metadata).then(duplicatedVariantsDetector);
 
             //Remapping ids task
-            Task<Variant, Variant> remapIdsTask = new RemapVariantIdsTask(studyConfiguration, fileId);
+            Task<Variant, Variant> remapIdsTask = new RemapVariantIdsTask(studyConfiguration.getStudyId(), fileId);
 
             //Runner
             ProgressLogger progressLogger = new ProgressLogger("Write variants in VARIANTS collection:", numRecords, 200);
@@ -387,7 +381,7 @@ public class MongoDBVariantStoragePipeline extends VariantStoragePipeline {
             variantReader = VariantReaderUtils.getVariantReader(input, metadata);
 
             //Remapping ids task
-            Task<Variant, Variant> remapIdsTask = new RemapVariantIdsTask(studyConfiguration, fileId);
+            Task<Variant, Variant> remapIdsTask = new RemapVariantIdsTask(studyConfiguration.getStudyId(), fileId);
 
             //Runner
             ProgressLogger progressLogger = new ProgressLogger("Write variants in STAGE collection:", numRecords, 200);

@@ -7,7 +7,6 @@ import org.opencb.commons.io.DataWriter;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -22,7 +21,7 @@ public abstract class AbstractHBaseDataWriter<T, M extends Mutation> implements 
     private BufferedMutator mutator;
 
     public AbstractHBaseDataWriter(HBaseManager hBaseManager, String tableName) {
-        this.hBaseManager = new HBaseManager(hBaseManager);
+        this.hBaseManager = new HBaseManager(hBaseManager.getConf());
         this.tableName = tableName;
     }
 
@@ -48,16 +47,6 @@ public abstract class AbstractHBaseDataWriter<T, M extends Mutation> implements 
         return true;
     }
 
-    @Override
-    public boolean write(T elem) {
-        try {
-            mutate(convert(Collections.singletonList(elem)));
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        return true;
-    }
-
     protected void mutate(List<M> convert) throws IOException {
         mutator.mutate(convert);
     }
@@ -76,6 +65,7 @@ public abstract class AbstractHBaseDataWriter<T, M extends Mutation> implements 
     public boolean close() {
         try {
             mutator.close();
+            hBaseManager.close();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

@@ -39,6 +39,7 @@ public class CohortCommandOptions {
     public UpdateCommandOptions updateCommandOptions;
     public DeleteCommandOptions deleteCommandOptions;
     public GroupByCommandOptions groupByCommandOptions;
+    public StatsCommandOptions statsCommandOptions;
 
     public AclCommandOptions.AclsCommandOptions aclsCommandOptions;
     public AclCommandOptions.AclsUpdateCommandOptions aclsUpdateCommandOptions;
@@ -71,6 +72,7 @@ public class CohortCommandOptions {
         this.updateCommandOptions = new UpdateCommandOptions();
         this.deleteCommandOptions = new DeleteCommandOptions();
         this.groupByCommandOptions = new GroupByCommandOptions();
+        this.statsCommandOptions = new StatsCommandOptions();
 
         this.annotationCommandOptions = new AnnotationCommandOptions(commonCommandOptions);
         this.annotationCreateCommandOptions = this.annotationCommandOptions.getCreateCommandOptions();
@@ -223,6 +225,51 @@ public class CohortCommandOptions {
 
         @Parameter(names = {"--nattributes"}, description = "numerical attributes", required = false, arity = 1)
         public String nattributes;
+    }
+
+    @Parameters(commandNames = {"stats"}, commandDescription = "Cohort stats")
+    public class StatsCommandOptions extends StudyOption {
+
+        @ParametersDelegate
+        public CommonCommandOptions commonOptions = commonCommandOptions;
+
+        @Parameter(names = {"--default"}, description = "Flag to calculate default stats", arity = 0)
+        public boolean defaultStats;
+
+        @Parameter(names = {"--creation-year"}, description = "Creation year.", arity = 1)
+        public String creationYear;
+
+        @Parameter(names = {"--creation-month"}, description = "Creation month (JANUARY, FEBRUARY...).", arity = 1)
+        public String creationMonth;
+
+        @Parameter(names = {"--creation-day"}, description = "Creation day.", arity = 1)
+        public String creationDay;
+
+        @Parameter(names = {"--creation-day-of-week"}, description = "Creation day of week (MONDAY, TUESDAY...).", arity = 1)
+        public String creationDayOfWeek;
+
+        @Parameter(names = {"--type"}, description = "Cohort type.", arity = 1)
+        public String type;
+
+        @Parameter(names = {"--status"}, description = "Status.", arity = 1)
+        public String status;
+
+        @Parameter(names = {"--num-samples"}, description = "Number of samples", arity = 1)
+        public String numSamples;
+
+        @Parameter(names = {"--release"}, description = "Release.", arity = 1)
+        public String release;
+
+        @Parameter(names = {"--annotation"}, description = "Annotation. See documentation to see the options.", arity = 1)
+        public String annotation;
+
+        @Parameter(names = {"--field"}, description = "List of fields separated by semicolons, e.g.: studies;type. For nested "
+                + "fields use >>, e.g.: studies>>biotype;type.", arity = 1)
+        public String field;
+
+        @Parameter(names = {"--field-range"}, description = "List of field ranges separated by semicolons with the format"
+                + " {field_name}:{start}:{end}:{step}, e.g.: sift:0:1:0.2;caddRaw:0:30:1.", arity = 1)
+        public String fieldRange;
     }
 
 }

@@ -54,6 +54,7 @@ public class FileCommandOptions {
     public UnlinkCommandOptions unlinkCommandOptions;
     public RefreshCommandOptions refreshCommandOptions;
     public GroupByCommandOptions groupByCommandOptions;
+    public StatsCommandOptions statsCommandOptions;
 //    public VariantsCommandOptions variantsCommandOptions;
 
     public FileAclCommandOptions.AclsCommandOptions aclsCommandOptions;
@@ -91,6 +92,7 @@ public class FileCommandOptions {
         this.linkCommandOptions = new LinkCommandOptions();
         this.uploadCommandOptions = new UploadCommandOptions();
         this.groupByCommandOptions = new GroupByCommandOptions();
+        this.statsCommandOptions = new StatsCommandOptions();
 //        this.variantsCommandOptions = new VariantsCommandOptions();
 
         FileAclCommandOptions aclCommandOptions = new FileAclCommandOptions(commonCommandOptions);
@@ -769,7 +771,8 @@ public class FileCommandOptions {
 //            @Parameter(names = {"--file"}, description = "Comma separated list of file ids, names or paths", arity = 1)
 //            public String file;
 
-            @Parameter(names = {"--sample"}, description = "Comma separated list of sample ids or names", arity = 1)
+            @Parameter(names = {"--sample"}, description = "Comma separated list of sample ids or file containing the list of ids "
+                    + "(one per line)", arity = 1)
             public String sample;
         }
 
@@ -780,6 +783,75 @@ public class FileCommandOptions {
             }
             return aclsUpdateCommandOptions;
         }
+    }
+
+    @Parameters(commandNames = {"stats"}, commandDescription = "File stats")
+    public class StatsCommandOptions extends StudyOption {
+
+        @ParametersDelegate
+        public CommonCommandOptions commonOptions = commonCommandOptions;
+
+        @Parameter(names = {"--default"}, description = "Flag to calculate default stats", arity = 0)
+        public boolean defaultStats;
+
+        @Parameter(names = {"--creation-year"}, description = "Creation year.", arity = 1)
+        public String creationYear;
+
+        @Parameter(names = {"--creation-month"}, description = "Creation month (JANUARY, FEBRUARY...).", arity = 1)
+        public String creationMonth;
+
+        @Parameter(names = {"--creation-day"}, description = "Creation day.", arity = 1)
+        public String creationDay;
+
+        @Parameter(names = {"--creation-day-of-week"}, description = "Creation day of week (MONDAY, TUESDAY...).", arity = 1)
+        public String creationDayOfWeek;
+
+        @Parameter(names = {"--name"}, description = "Name.", arity = 1)
+        public String name;
+
+        @Parameter(names = {"--type"}, description = "Type.", arity = 1)
+        public String type;
+
+        @Parameter(names = {"--format"}, description = "Format.", arity = 1)
+        public String format;
+
+        @Parameter(names = {"--bioformat"}, description = "Bioformat.", arity = 1)
+        public String bioformat;
+
+        @Parameter(names = {"--status"}, description = "Status.", arity = 1)
+        public String status;
+
+        @Parameter(names = {"--num-samples"}, description = "Number of samples", arity = 1)
+        public String numSamples;
+
+        @Parameter(names = {"--num-related-files"}, description = "Number of related files.", arity = 1)
+        public String numRelatedFiles;
+
+        @Parameter(names = {"--release"}, description = "Release.", arity = 1)
+        public String release;
+
+        @Parameter(names = {"--external"}, description = "External.", arity = 1)
+        public Boolean external;
+
+        @Parameter(names = {"--size"}, description = "Size in bytes.", arity = 1)
+        public String size;
+
+        @Parameter(names = {"--software"}, description = "Software.", arity = 1)
+        public String software;
+
+        @Parameter(names = {"--experiment"}, description = "Experiment.", arity = 1)
+        public String experiment;
+
+        @Parameter(names = {"--annotation"}, description = "Annotation. See documentation to see the options.", arity = 1)
+        public String annotation;
+
+        @Parameter(names = {"--field"}, description = "List of fields separated by semicolons, e.g.: studies;type. For nested "
+                + "fields use >>, e.g.: studies>>biotype;type.", arity = 1)
+        public String field;
+
+        @Parameter(names = {"--field-range"}, description = "List of ranges separated by semicolons with the format"
+                + " {field_name}:{start}:{end}:{step}, e.g.: sift:0:1:0.2;caddRaw:0:30:1.", arity = 1)
+        public String fieldRange;
     }
 
 }

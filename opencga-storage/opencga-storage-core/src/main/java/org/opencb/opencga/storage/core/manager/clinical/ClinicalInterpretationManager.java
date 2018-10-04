@@ -19,7 +19,7 @@ import org.apache.commons.lang.StringUtils;
 import org.opencb.commons.datastore.core.Query;
 import org.opencb.commons.datastore.core.QueryOptions;
 import org.opencb.commons.datastore.core.QueryResult;
-import org.opencb.commons.datastore.core.result.FacetedQueryResult;
+import org.opencb.commons.datastore.core.result.FacetQueryResult;
 import org.opencb.opencga.catalog.db.api.ClinicalAnalysisDBAdaptor;
 import org.opencb.opencga.catalog.db.api.DBIterator;
 import org.opencb.opencga.catalog.db.api.StudyDBAdaptor;
@@ -45,6 +45,8 @@ import java.util.stream.Collectors;
 
 public class ClinicalInterpretationManager extends StorageManager {
 
+    private String database;
+
     private ClinicalAnalysisManager clinicalAnalysisManager;
     private ClinicalVariantEngine clinicalVariantEngine;
 
@@ -53,17 +55,27 @@ public class ClinicalInterpretationManager extends StorageManager {
         super(catalogManager, storageEngineFactory);
 
         clinicalAnalysisManager = catalogManager.getClinicalAnalysisManager();
+
+        this.init();
     }
 
     // FIXME Class path to a new section in storage-configuration.yml file
     private void init() {
         try {
-            this.clinicalVariantEngine =
-                    (ClinicalVariantEngine) Class.forName("org.opencb.opencga.enterprise.clinical.ClinicalVariantSolrEngine").newInstance();
-        } catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
+            this.database = catalogManager.getConfiguration().getDatabasePrefix() + "_clinical";
+
+            this.clinicalVariantEngine = getClinicalStorageEngine();
+        } catch (IllegalAccessException | InstantiationException | ClassNotFoundException e) {
             e.printStackTrace();
         }
 
+    }
+
+    private ClinicalVariantEngine getClinicalStorageEngine() throws ClassNotFoundException, IllegalAccessException, InstantiationException {
+        String clazz = this.storageConfiguration.getClinical().getManager();
+        ClinicalVariantEngine storageEngine = (ClinicalVariantEngine) Class.forName(clazz).newInstance();
+        storageEngine.setStorageConfiguration(this.storageConfiguration);
+        return storageEngine;
     }
 
     @Override
@@ -75,7 +87,17 @@ public class ClinicalInterpretationManager extends StorageManager {
     }
 
     public QueryResult<ReportedVariant> index(String study, String token) throws IOException, ClinicalVariantException, CatalogException {
-        DBIterator<ClinicalAnalysis> iterator = clinicalAnalysisManager.iterator(study, new Query(), QueryOptions.empty(), token);
+        DBIterator<ClinicalAnalysis> clinicalAnalysisDBIterator =
+                clinicalAnalysisManager.iterator(study, new Query(), QueryOptions.empty(), token);
+
+        while (clinicalAnalysisDBIterator.hasNext()) {
+            ClinicalAnalysis clinicalAnalysis = clinicalAnalysisDBIterator.next();
+            for (Interpretation interpretation : clinicalAnalysis.getInterpretations()) {
+                interpretation.getAttributes().put("OPENCGA_CLINICAL_ANALYSIS", clinicalAnalysis);
+
+                this.clinicalVariantEngine.insert(interpretation, database);
+            }
+        }
         return null;
     }
 
@@ -95,7 +117,7 @@ public class ClinicalInterpretationManager extends StorageManager {
         return clinicalVariantEngine.interpretationQuery(query, options, "");
     }
 
-    public FacetedQueryResult facet(Query query, QueryOptions queryOptions, String token)
+    public FacetQueryResult facet(Query query, QueryOptions queryOptions, String token)
             throws IOException, ClinicalVariantException, CatalogException {
         // Check permissions
         query = checkQueryPermissions(query, token);

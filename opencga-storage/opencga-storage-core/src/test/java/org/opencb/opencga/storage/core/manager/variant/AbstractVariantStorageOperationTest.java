@@ -129,7 +129,7 @@ public abstract class AbstractVariantStorageOperationTest extends GenericTest {
                 new StorageEtlConfiguration(DummyVariantStorageEngine.class.getName(), new ObjectMap(), new DatabaseCredentials()),
                 new ObjectMap()
         ));
-        factory.unregisterVariantStorageManager(DummyVariantStorageEngine.STORAGE_ENGINE_ID);
+        factory.unregisterVariantStorageEngine(DummyVariantStorageEngine.STORAGE_ENGINE_ID);
 
         DummyStudyConfigurationAdaptor.clear();
 
@@ -316,7 +316,7 @@ public abstract class AbstractVariantStorageOperationTest extends GenericTest {
 
 
         String outdir = opencga.createTmpOutdir(studyId, "_INDEX_", sessionId);
-        List<String> fileIds = files.stream().map(File::getId).collect(Collectors.toList());
+        List<String> fileIds = files.stream().map(File::getPath).collect(Collectors.toList());
 
         List<StoragePipelineResult> etlResults = variantManager.index(studyId, fileIds, outdir, queryOptions, sessionId);
 
@@ -377,9 +377,9 @@ public abstract class AbstractVariantStorageOperationTest extends GenericTest {
         DummyVariantStorageEngine vsm = spy(new DummyVariantStorageEngine());
         vsm.setConfiguration(opencga.getStorageConfiguration(), DummyVariantStorageEngine.STORAGE_ENGINE_ID,
                 StorageOperation.buildDatabaseName(catalogManager.getConfiguration().getDatabasePrefix(), userId, projectAlias));
-        StorageEngineFactory.get(opencga.getStorageConfiguration()).registerStorageManager(vsm);
+        StorageEngineFactory.get(opencga.getStorageConfiguration()).registerVariantStorageEngine(vsm);
         vsm.setConfiguration(opencga.getStorageConfiguration(), DummyVariantStorageEngine.STORAGE_ENGINE_ID, DB_NAME);
-        StorageEngineFactory.get(opencga.getStorageConfiguration()).registerStorageManager(vsm);
+        StorageEngineFactory.get(opencga.getStorageConfiguration()).registerVariantStorageEngine(vsm);
         return vsm;
     }
 

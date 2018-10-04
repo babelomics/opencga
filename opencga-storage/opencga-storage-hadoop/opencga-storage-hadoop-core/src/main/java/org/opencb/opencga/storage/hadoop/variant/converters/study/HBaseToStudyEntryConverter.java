@@ -33,7 +33,6 @@ import org.opencb.biodata.models.variant.avro.FileEntry;
 import org.opencb.biodata.models.variant.avro.VariantType;
 import org.opencb.biodata.models.variant.stats.VariantStats;
 import org.opencb.biodata.tools.variant.merge.VariantMerger;
-import org.opencb.commons.datastore.core.QueryOptions;
 import org.opencb.commons.datastore.core.QueryResult;
 import org.opencb.opencga.storage.core.metadata.StudyConfiguration;
 import org.opencb.opencga.storage.core.metadata.StudyConfigurationManager;
@@ -48,13 +47,13 @@ import org.opencb.opencga.storage.hadoop.variant.index.phoenix.VariantPhoenixKey
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.sql.Array;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static org.opencb.opencga.storage.core.metadata.StudyConfigurationManager.RO_CACHED_OPTIONS;
 import static org.opencb.opencga.storage.core.variant.adaptors.GenotypeClass.UNKNOWN_GENOTYPE;
 import static org.opencb.opencga.storage.hadoop.variant.HadoopVariantStorageEngine.MISSING_GENOTYPES_UPDATED;
 
@@ -73,13 +72,13 @@ public class HBaseToStudyEntryConverter extends AbstractPhoenixConverter {
     public static final int FILE_QUAL_IDX = 3;
     public static final int FILE_FILTER_IDX = 4;
     public static final int FILE_INFO_START_IDX = 5;
+    public static final String ALTERNATE_COORDINATE_SEPARATOR = ":";
 
     private final StudyConfigurationManager scm;
     private final HBaseToVariantStatsConverter statsConverter;
-    private final QueryOptions scmOptions = new QueryOptions(StudyConfigurationManager.READ_ONLY, true)
-            .append(StudyConfigurationManager.CACHED, true);
     private final Map<Integer, LinkedHashMap<String, Integer>> returnedSamplesPositionMap = new HashMap<>();
     private Map<Pair<Integer, Integer>, List<Boolean>> missingUpdatedSamplesMap = new HashMap<>();
+    private Map<Integer, String> fileIds = new HashMap<>();
 
     private boolean studyNameAsStudyId = false;
     private boolean simpleGenotypes = false;
@@ -169,7 +168,7 @@ public class HBaseToStudyEntryConverter extends AbstractPhoenixConverter {
         if (studyConfiguration != null) {
             return studyConfiguration;
         } else {
-            QueryResult<StudyConfiguration> queryResult = scm.getStudyConfiguration(studyId, scmOptions);
+            QueryResult<StudyConfiguration> queryResult = scm.getStudyConfiguration(studyId, RO_CACHED_OPTIONS);
             if (queryResult.getResult().isEmpty()) {
                 throw new IllegalStateException("No study found for study ID: " + studyId);
             }
@@ -191,7 +190,7 @@ public class HBaseToStudyEntryConverter extends AbstractPhoenixConverter {
                     String[] split = columnName.split(VariantPhoenixHelper.COLUMN_KEY_SEPARATOR_STR);
                     Integer studyId = getStudyId(split);
                     Integer sampleId = getSampleId(split);
-                    Array value = resultSet.getArray(i);
+                    PhoenixArray value = (PhoenixArray) resultSet.getArray(i);
                     if (value != null) {
                         List<String> sampleData = toModifiableList(value);
                         studies.add(studyId);
@@ -217,11 +216,7 @@ public class HBaseToStudyEntryConverter extends AbstractPhoenixConverter {
                 }
             }
 
-            Variant variant = new Variant(resultSet.getString(VariantPhoenixHelper.VariantColumn.CHROMOSOME.column()),
-                    resultSet.getInt(VariantPhoenixHelper.VariantColumn.POSITION.column()),
-                    resultSet.getString(VariantPhoenixHelper.VariantColumn.REFERENCE.column()),
-                    resultSet.getString(VariantPhoenixHelper.VariantColumn.ALTERNATE.column())
-            );
+            Variant variant = VariantPhoenixKeyFactory.extractVariantFromResultSet(resultSet);
 
             Map<Integer, Map<Integer, VariantStats>> stats = statsConverter.convert(resultSet);
 
@@ -261,7 +256,7 @@ public class HBaseToStudyEntryConverter extends AbstractPhoenixConverter {
                 String[] split = columnName.split(VariantPhoenixHelper.COLUMN_KEY_SEPARATOR_STR);
                 Integer studyId = getStudyId(split);
                 Integer sampleId = getSampleId(split);
-                Array array = (Array) PVarcharArray.INSTANCE.toObject(bytes);
+                PhoenixArray array = (PhoenixArray) PVarcharArray.INSTANCE.toObject(bytes);
                 List<String> sampleData = toModifiableList(array);
                 studies.add(studyId);
                 sampleDataMap.computeIfAbsent(studyId, s -> new ArrayList<>()).add(Pair.of(sampleId, sampleData));
@@ -367,7 +362,7 @@ public class HBaseToStudyEntryConverter extends AbstractPhoenixConverter {
         sampleData = remapSamplesData(sampleData, formatsMap);
         Integer gtIdx = studyEntry.getFormatPositions().get("GT");
         // Replace UNKNOWN_GENOTYPE, if any
-        if (gtIdx != null && sampleData.get(gtIdx).equals(GenotypeClass.UNKNOWN_GENOTYPE)) {
+        if (gtIdx != null && GenotypeClass.UNKNOWN_GENOTYPE.equals(sampleData.get(gtIdx))) {
             sampleData.set(gtIdx, unknownGenotype);
         }
 
@@ -416,11 +411,16 @@ public class HBaseToStudyEntryConverter extends AbstractPhoenixConverter {
         if (qual != null) {
             attributes.put(StudyEntry.QUAL, qual);
         }
-        attributes.put(StudyEntry.FILTER, (String) (fileColumn.getElement(FILE_FILTER_IDX)));
-        String alternate = (String) (fileColumn.getElement(FILE_SEC_ALTS_IDX));
-        if (StringUtils.isNotEmpty(alternate)) {
-            alternateFileMap.computeIfAbsent(alternate, (key) -> new ArrayList<>()).add(fileId);
+        String filter = (String) (fileColumn.getElement(FILE_FILTER_IDX));
+        if (filter != null) {
+            attributes.put(StudyEntry.FILTER, filter);
         }
+        String alternate = (String) (fileColumn.getElement(FILE_SEC_ALTS_IDX));
+        String fileName = studyConfiguration.getFileIds().inverse().get(Integer.parseInt(fileId));
+
+        // Add all combinations of secondary alternates, even the combination of "none secondary alternates", i.e. empty string
+        alternateFileMap.computeIfAbsent(alternate, (key) -> new ArrayList<>()).add(fileName);
+
         List<String> fixedAttributes = HBaseToVariantConverter.getFixedAttributes(studyConfiguration);
         int i = FILE_INFO_START_IDX;
         for (String attribute : fixedAttributes) {
@@ -434,7 +434,7 @@ public class HBaseToStudyEntryConverter extends AbstractPhoenixConverter {
             i++;
         }
         // fileColumn.getElement(FILE_VARIANT_OVERLAPPING_STATUS_IDX);
-        studyEntry.getFiles().add(new FileEntry(fileId, (String) (fileColumn.getElement(FILE_CALL_IDX)), attributes));
+        studyEntry.getFiles().add(new FileEntry(fileName, (String) (fileColumn.getElement(FILE_CALL_IDX)), attributes));
     }
 
     private void fillEmptySamplesData(StudyEntry studyEntry, StudyConfiguration studyConfiguration, int fillMissingColumnValue) {
@@ -457,7 +457,7 @@ public class HBaseToStudyEntryConverter extends AbstractPhoenixConverter {
 
         Set<Integer> filesInThisVariant = studyEntry.getFiles().stream()
                 .map(FileEntry::getFileId)
-                .map(Integer::parseInt)
+                .map(studyConfiguration.getFileIds()::get)
                 .collect(Collectors.toSet());
 
         List<Boolean> sampleWithVariant = getSampleWithVariant(studyConfiguration, filesInThisVariant);
@@ -640,7 +640,7 @@ public class HBaseToStudyEntryConverter extends AbstractPhoenixConverter {
     }
 
     /**
-     * Add secondary alternates to the StudyEntry. Merge secondar alternates if needed.
+     * Add secondary alternates to the StudyEntry. Merge secondary alternates if needed.
      *
      * @param variant            Variant coordinates.
      * @param studyEntry         Study Entry all samples data
@@ -667,6 +667,8 @@ public class HBaseToStudyEntryConverter extends AbstractPhoenixConverter {
             // Create one variant for each alternate with the samples data
             List<Variant> variants = new ArrayList<>(alternateFileIdMap.size());
 
+            Map<String, List<String>> samplesWithUnknownGenotype = new HashMap<>();
+            Integer gtIndex = studyEntry.getFormatPositions().get("GT");
             for (Map.Entry<String, List<String>> entry : alternateFileIdMap.entrySet()) {
                 String secondaryAlternates = entry.getKey();
                 List<String> fileIds = entry.getValue();
@@ -674,17 +676,31 @@ public class HBaseToStudyEntryConverter extends AbstractPhoenixConverter {
                 Variant sampleVariant = new Variant(
                         variant.getChromosome(),
                         variant.getStart(),
+                        variant.getEnd(),
                         variant.getReference(),
-                        variant.getAlternate());
+                        variant.getAlternate())
+                        .setSv(variant.getSv());
                 StudyEntry se = new StudyEntry("0");
                 se.setSecondaryAlternates(getAlternateCoordinates(secondaryAlternates));
                 se.setFormat(studyEntry.getFormat());
 
                 for (String fileId : fileIds) {
                     se.getFiles().add(studyEntry.getFile(fileId));
-                    for (Integer sampleId : studyConfiguration.getSamplesInFiles().get(Integer.parseInt(fileId))) {
+                    for (Integer sampleId : studyConfiguration.getSamplesInFiles().get(studyConfiguration.getFileIds().get(fileId))) {
                         String sample = studyConfiguration.getSampleIds().inverse().get(sampleId);
-                        se.addSampleData(sample, studyEntry.getSampleData(sample));
+                        List<String> sampleData = studyEntry.getSampleData(sample);
+                        if (gtIndex == null || !sampleData.get(0).equals(UNKNOWN_GENOTYPE)) {
+                            se.addSampleData(sample, sampleData);
+                        } else {
+                            // Add dummy data for this sample
+                            ArrayList<String> dummySampleData = new ArrayList<>();
+                            dummySampleData.add("0/0");
+                            for (int i = 1; i < studyEntry.getFormat().size(); i++) {
+                                dummySampleData.add("");
+                            }
+                            se.addSampleData(sample, dummySampleData);
+                            samplesWithUnknownGenotype.put(sample, sampleData);
+                        }
                     }
                 }
                 sampleVariant.addStudyEntry(se);
@@ -697,7 +713,12 @@ public class HBaseToStudyEntryConverter extends AbstractPhoenixConverter {
             // Update samplesData information
             StudyEntry newSe = newVariant.getStudies().get(0);
             for (String sample : newSe.getSamplesName()) {
-                studyEntry.addSampleData(sample, newSe.getSampleData(sample));
+                List<String> unknownGenotypeData = samplesWithUnknownGenotype.get(sample);
+                if (unknownGenotypeData != null) {
+                    studyEntry.addSampleData(sample, unknownGenotypeData);
+                } else {
+                    studyEntry.addSampleData(sample, newSe.getSampleData(sample));
+                }
             }
             for (FileEntry fileEntry : newSe.getFiles()) {
                 studyEntry.getFile(fileEntry.getFileId()).setAttributes(fileEntry.getAttributes());
@@ -712,21 +733,29 @@ public class HBaseToStudyEntryConverter extends AbstractPhoenixConverter {
         studyEntry.setSecondaryAlternates(alternateCoordinates);
     }
 
-    public List<AlternateCoordinate> getAlternateCoordinates(String s) {
-        return Arrays.stream(s.split(","))
-                .map(this::getAlternateCoordinate)
-                .collect(Collectors.toList());
+    public static List<AlternateCoordinate> getAlternateCoordinates(String s) {
+        if (StringUtils.isEmpty(s)) {
+            return Collections.emptyList();
+        } else {
+            return Arrays.stream(s.split(","))
+                    .map(HBaseToStudyEntryConverter::getAlternateCoordinate)
+                    .collect(Collectors.toList());
+        }
     }
 
-    public AlternateCoordinate getAlternateCoordinate(String s) {
-        String[] split = s.split(":");
+    // Alternate field may contain the separator char
+    public static AlternateCoordinate getAlternateCoordinate(String s) {
+        String[] split = s.split(ALTERNATE_COORDINATE_SEPARATOR, 5);
+        int idx = split[4].lastIndexOf(ALTERNATE_COORDINATE_SEPARATOR);
+        String alternate = split[4].substring(0, idx);
+        VariantType type = VariantType.valueOf(split[4].substring(idx + 1));
         return new AlternateCoordinate(
                 split[0],
                 Integer.parseInt(split[1]),
                 Integer.parseInt(split[2]),
                 split[3],
-                split[4],
-                VariantType.valueOf(split[5])
+                alternate,
+                type
         );
     }
 

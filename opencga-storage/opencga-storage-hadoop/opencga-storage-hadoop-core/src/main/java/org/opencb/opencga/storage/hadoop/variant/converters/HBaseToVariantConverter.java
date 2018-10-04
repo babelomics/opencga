@@ -49,6 +49,8 @@ import java.sql.SQLException;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static org.opencb.opencga.storage.core.variant.VariantStorageEngine.Options.SEARCH_INDEX_LAST_TIMESTAMP;
+import static org.opencb.opencga.storage.hadoop.variant.index.phoenix.VariantPhoenixKeyFactory.extractVariantFromResultSet;
 import static org.opencb.opencga.storage.hadoop.variant.index.phoenix.VariantPhoenixKeyFactory.extractVariantFromVariantRowKey;
 
 /**
@@ -77,7 +79,9 @@ public abstract class HBaseToVariantConverter<T> implements Converter<T, Variant
 
     public HBaseToVariantConverter(GenomeHelper genomeHelper, StudyConfigurationManager scm) {
         this.genomeHelper = genomeHelper;
-        this.annotationConverter = new HBaseToVariantAnnotationConverter(genomeHelper);
+        long ts = scm.getProjectMetadata().first().getAttributes().getLong(SEARCH_INDEX_LAST_TIMESTAMP.key());
+        this.annotationConverter = new HBaseToVariantAnnotationConverter(genomeHelper, ts)
+                .setAnnotationIds(scm.getProjectMetadata().first().getAnnotation());
         HBaseToVariantStatsConverter statsConverter = new HBaseToVariantStatsConverter(genomeHelper);
         this.studyEntryConverter = new HBaseToStudyEntryConverter(genomeHelper.getColumnFamily(), scm, statsConverter);
     }
@@ -244,16 +248,8 @@ public abstract class HBaseToVariantConverter<T> implements Converter<T, Variant
 
         @Override
         public Variant convert(ResultSet resultSet) {
-            String chromosome = null;
-            Integer start = null;
-            String reference = null;
-            String alternate = null;
+            Variant variant = extractVariantFromResultSet(resultSet);
             try {
-                chromosome = resultSet.getString(VariantPhoenixHelper.VariantColumn.CHROMOSOME.column());
-                start = resultSet.getInt(VariantPhoenixHelper.VariantColumn.POSITION.column());
-                reference = resultSet.getString(VariantPhoenixHelper.VariantColumn.REFERENCE.column());
-                alternate = resultSet.getString(VariantPhoenixHelper.VariantColumn.ALTERNATE.column());
-                Variant variant = new Variant(chromosome, start, reference, alternate);
                 String type = resultSet.getString(VariantPhoenixHelper.VariantColumn.TYPE.column());
                 if (StringUtils.isNotBlank(type)) {
                     variant.setType(VariantType.valueOf(type));
@@ -264,7 +260,7 @@ public abstract class HBaseToVariantConverter<T> implements Converter<T, Variant
                 Map<Integer, StudyEntry> samplesData = studyEntryConverter.convert(resultSet);
                 return convert(variant, samplesData, annotation);
             } catch (RuntimeException | SQLException e) {
-                logger.error("Fail to parse variant: " + chromosome + ':' + start + ':' + reference + ':' + alternate);
+                logger.error("Fail to parse variant: " + variant);
                 throw Throwables.propagate(e);
             }
         }

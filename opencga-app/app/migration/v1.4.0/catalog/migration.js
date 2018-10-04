@@ -17,10 +17,61 @@ load("catalog/long.js");
 var Entity = Object.freeze({"PROJECT": 1, "STUDY": 2, "FILE": 3, "SAMPLE": 4, "COHORT": 5, "INDIVIDUAL": 6, "FAMILY": 7, "JOB": 8,
     "CLINICAL": 9, "PANEL": 10});
 
-// Create Base64 Object - Extracted from https://scotch.io/tutorials/how-to-encode-and-decode-strings-with-base64-in-javascript
-var Base64={_keyStr:"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=",encode:function(e){var t="";var n,r,i,s,o,u,a;var f=0;e=Base64._utf8_encode(e);while(f<e.length){n=e.charCodeAt(f++);r=e.charCodeAt(f++);i=e.charCodeAt(f++);s=n>>2;o=(n&3)<<4|r>>4;u=(r&15)<<2|i>>6;a=i&63;if(isNaN(r)){u=a=64}else if(isNaN(i)){a=64}t=t+this._keyStr.charAt(s)+this._keyStr.charAt(o)+this._keyStr.charAt(u)+this._keyStr.charAt(a)}return t},decode:function(e){var t="";var n,r,i;var s,o,u,a;var f=0;e=e.replace(/[^A-Za-z0-9+/=]/g,"");while(f<e.length){s=this._keyStr.indexOf(e.charAt(f++));o=this._keyStr.indexOf(e.charAt(f++));u=this._keyStr.indexOf(e.charAt(f++));a=this._keyStr.indexOf(e.charAt(f++));n=s<<2|o>>4;r=(o&15)<<4|u>>2;i=(u&3)<<6|a;t=t+String.fromCharCode(n);if(u!=64){t=t+String.fromCharCode(r)}if(a!=64){t=t+String.fromCharCode(i)}}t=Base64._utf8_decode(t);return t},_utf8_encode:function(e){e=e.replace(/rn/g,"n");var t="";for(var n=0;n<e.length;n++){var r=e.charCodeAt(n);if(r<128){t+=String.fromCharCode(r)}else if(r>127&&r<2048){t+=String.fromCharCode(r>>6|192);t+=String.fromCharCode(r&63|128)}else{t+=String.fromCharCode(r>>12|224);t+=String.fromCharCode(r>>6&63|128);t+=String.fromCharCode(r&63|128)}}return t},_utf8_decode:function(e){var t="";var n=0;var r=c1=c2=0;while(n<e.length){r=e.charCodeAt(n);if(r<128){t+=String.fromCharCode(r);n++}else if(r>191&&r<224){c2=e.charCodeAt(n+1);t+=String.fromCharCode((r&31)<<6|c2&63);n+=2}else{c2=e.charCodeAt(n+1);c3=e.charCodeAt(n+2);t+=String.fromCharCode((r&15)<<12|(c2&63)<<6|c3&63);n+=3}}return t}}
 
+// Converts an ArrayBuffer directly to base64, without any intermediate 'convert to string then use window.btoa' step
+// Extracted from https://gist.github.com/jonleighton/958841
+function base64ArrayBuffer(arrayBuffer) {
+    var base64    = ''
+    // We modify the original encodings to convert url safe base64Url
+    var encodings = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
 
+    var bytes         = new Uint8Array(arrayBuffer)
+    var byteLength    = bytes.byteLength
+    var byteRemainder = byteLength % 3
+    var mainLength    = byteLength - byteRemainder
+
+    var a, b, c, d;
+    var chunk;
+
+    // Main loop deals with bytes in chunks of 3
+    for (var i = 0; i < mainLength; i = i + 3) {
+        // Combine the three bytes into a single integer
+        chunk = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2]
+
+        // Use bitmasks to extract 6-bit segments from the triplet
+        a = (chunk & 16515072) >> 18 // 16515072 = (2^6 - 1) << 18
+        b = (chunk & 258048)   >> 12 // 258048   = (2^6 - 1) << 12
+        c = (chunk & 4032)     >>  6 // 4032     = (2^6 - 1) << 6
+        d = chunk & 63               // 63       = 2^6 - 1
+
+        // Convert the raw binary segments to the appropriate ASCII encoding
+        base64 += encodings[a] + encodings[b] + encodings[c] + encodings[d]
+    }
+
+    // Deal with the remaining bytes and padding
+    if (byteRemainder == 1) {
+        chunk = bytes[mainLength]
+
+        a = (chunk & 252) >> 2 // 252 = (2^6 - 1) << 2
+
+        // Set the 4 least significant bits to zero
+        b = (chunk & 3)   << 4 // 3   = 2^2 - 1
+
+        base64 += encodings[a] + encodings[b] + '=='
+    } else if (byteRemainder == 2) {
+        chunk = (bytes[mainLength] << 8) | bytes[mainLength + 1]
+
+        a = (chunk & 64512) >> 10 // 64512 = (2^6 - 1) << 10
+        b = (chunk & 1008)  >>  4 // 1008  = (2^6 - 1) << 4
+
+        // Set the 2 least significant bits to zero
+        c = (chunk & 15)    <<  2 // 15    = 2^4 - 1
+
+        base64 += encodings[a] + encodings[b] + encodings[c] + '='
+    }
+
+    return base64
+}
 
 
 print("Migrating clinical analysis");
@@ -55,8 +106,7 @@ migrateCollection("clinical", {"uuid": {$exists: false}}, {attributes: 0, annota
     // Check family
     if (typeof doc.family !== "undefined" && typeof doc.family.id !== "undefined") {
         setChanges["family"] = {
-            "uid": doc.family.id,
-            "version": doc.family.version
+            "uid": doc.family.id
         };
     }
 
@@ -104,6 +154,7 @@ migrateCollection("cohort", {"uuid": {$exists: false}}, {attributes: 0, annotati
     setChanges["studyUid"] = doc["_studyId"];
     setChanges["uuid"] = generateOpenCGAUUID("COHORT", setChanges["_creationDate"]);
 
+    unsetChanges["acl"] = "";
     unsetChanges["_studyId"] = "";
 
     // Check samples
@@ -133,6 +184,7 @@ migrateCollection("family", {"uuid": {$exists: false}}, {attributes: 0, annotati
     setChanges["uid"] = doc["id"];
     setChanges["id"] = doc["name"];
     setChanges["studyUid"] = doc["_studyId"];
+    setChanges["version"] = NumberInt(doc["version"]);
     setChanges["uuid"] = generateOpenCGAUUID("FAMILY", setChanges["_creationDate"]);
 
     unsetChanges["_studyId"] = "";
@@ -143,6 +195,7 @@ migrateCollection("family", {"uuid": {$exists: false}}, {attributes: 0, annotati
             var member = doc.members[i];
 
             member["uid"] = member["id"];
+            member["version"] = NumberInt(member["version"]);
             delete member["id"];
         }
 
@@ -169,6 +222,16 @@ migrateCollection("file", {"uuid": {$exists: false}}, {attributes: 0, stats: 0},
     setChanges["id"] = doc["path"].replace(/\//g, ":");
     setChanges["uuid"] = generateOpenCGAUUID("FILE", setChanges["_creationDate"]);
 
+    /* #906 */
+    setChanges["_reverse"] = doc["name"].split("").reverse().join("");
+
+    /* Check bigwig format autodetection */
+    if (doc.name.endsWith(".bw")) {
+        setChanges["format"] = "BIGWIG";
+        setChanges["bioformat"] = "COVERAGE";
+    }
+
+    unsetChanges["acl"] = "";
     unsetChanges["_studyId"] = "";
 
     // Check samples
@@ -220,23 +283,23 @@ migrateCollection("individual", {"uuid": {$exists: false}}, {attributes: 0, anno
     setChanges["uid"] = doc["id"];
     setChanges["id"] = doc["name"];
     setChanges["studyUid"] = doc["_studyId"];
+    setChanges["version"] = NumberInt(doc["version"]);
     setChanges["uuid"] = generateOpenCGAUUID("INDIVIDUAL", setChanges["_creationDate"]);
 
+    unsetChanges["acl"] = "";
     unsetChanges["_studyId"] = "";
 
     // Check father
     if (typeof doc.father !== "undefined" && typeof doc.father.id !== "undefined") {
         setChanges["father"] = {
-            "uid": doc.father.id,
-            "version": doc.father.version
+            "uid": doc.father.id
         }
     }
 
     // Check mother
     if (typeof doc.mother !== "undefined" && typeof doc.mother.id !== "undefined") {
         setChanges["mother"] = {
-            "uid": doc.mother.id,
-            "version": doc.mother.version
+            "uid": doc.mother.id
         }
     }
 
@@ -246,6 +309,7 @@ migrateCollection("individual", {"uuid": {$exists: false}}, {attributes: 0, anno
             var sample = doc.samples[i];
 
             sample["uid"] = sample["id"];
+            sample["version"] = NumberInt(sample["version"]);
             delete sample["id"];
         }
 
@@ -269,6 +333,7 @@ migrateCollection("job", {"uuid": {$exists: false}}, {attributes: 0}, function(b
     setChanges["studyUid"] = doc["_studyId"];
     setChanges["uuid"] = generateOpenCGAUUID("JOB", setChanges["_creationDate"]);
 
+    unsetChanges["acl"] = "";
     unsetChanges["_studyId"] = "";
 
     // Check input
@@ -298,24 +363,21 @@ migrateCollection("job", {"uuid": {$exists: false}}, {attributes: 0}, function(b
     // Check outDir
     if (typeof doc.outDir !== "undefined" && typeof doc.outDir.id !== "undefined") {
         setChanges["outDir"] = {
-            "uid": doc.outDir.id,
-            "version": doc.outDir.version
+            "uid": doc.outDir.id
         }
     }
 
     // Check stdOutput
     if (typeof doc.stdOutput !== "undefined" && typeof doc.stdOutput.id !== "undefined") {
         setChanges["stdOutput"] = {
-            "uid": doc.stdOutput.id,
-            "version": doc.stdOutput.version
+            "uid": doc.stdOutput.id
         }
     }
 
     // Check stdError
     if (typeof doc.stdError !== "undefined" && typeof doc.stdError.id !== "undefined") {
         setChanges["stdError"] = {
-            "uid": doc.stdError.id,
-            "version": doc.stdError.version
+            "uid": doc.stdError.id
         }
     }
     /* end uid and uuid migration: #819 */
@@ -334,9 +396,11 @@ migrateCollection("sample", {"uuid": {$exists: false}}, {attributes: 0, annotati
     /* uid and uuid migration: #819 */
     setChanges["uid"] = doc["id"];
     setChanges["id"] = doc["name"];
+    setChanges["version"] = NumberInt(doc["version"]);
     setChanges["studyUid"] = doc["_studyId"];
     setChanges["uuid"] = generateOpenCGAUUID("SAMPLE", setChanges["_creationDate"]);
 
+    unsetChanges["acl"] = "";
     unsetChanges["_studyId"] = "";
     /* end uid and uuid migration: #819 */
 
@@ -399,6 +463,7 @@ migrateCollection("study", {"uuid": {$exists: false}}, {attributes: 0}, function
     setChanges["uuid"] = generateOpenCGAUUID("STUDY", setChanges["_creationDate"]);
 
     unsetChanges["_projectId"] = "";
+    unsetChanges["acl"] = "";
 
     // Check variableSets
     if (typeof doc.variableSets !== "undefined" && doc.variableSets.length > 0) {
@@ -420,6 +485,127 @@ print("");
 
 // Update metadata version
 db.metadata.update({}, {"$set": {"version": "1.4.0"}});
+
+// Create all the indexes
+db.user.createIndex({"id": 1}, {"background": true});
+db.user.createIndex({"projects.uid": 1}, {"background": true});
+db.user.createIndex({"projects.uuid": 1}, {"background": true});
+db.user.createIndex({"projects.id": 1, "uid": 1}, {"background": true});
+
+db.study.createIndex({"uid": 1}, {"background": true});
+db.study.createIndex({"uuid": 1}, {"background": true});
+db.study.createIndex({"id": 1, "_project.uid": 1}, {"unique": true, "background": true});
+db.study.createIndex({"status.name": 1}, {"background": true});
+db.study.createIndex({"_acl": 1}, {"background": true});
+db.study.createIndex({"_project.uid": 1}, {"background": true});
+
+db.job.createIndex({"uuid": 1}, {"background": true});
+db.job.createIndex({"uid": 1}, {"background": true});
+db.job.createIndex({"id": 1, "studyUid": 1}, {"unique": true, "background": true});
+db.job.createIndex({"toolId": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.job.createIndex({"status.name": 1, "studyUid": 1}, {"background": true});
+db.job.createIndex({"input.uid": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.job.createIndex({"output.uid": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.job.createIndex({"tags": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.job.createIndex({"_acl": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+
+db.file.createIndex({"uuid": 1}, {"background": true});
+db.file.createIndex({"uid": 1}, {"background": true});
+db.file.createIndex({"id": 1, "studyUid": 1}, {"unique": true, "background": true});
+db.file.createIndex({"path": 1, "studyUid": 1}, {"unique": true, "background": true});
+db.file.createIndex({"name": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.file.createIndex({"_reverse": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.file.createIndex({"type": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.file.createIndex({"format": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.file.createIndex({"bioformat": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.file.createIndex({"uri": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.file.createIndex({"tags": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.file.createIndex({"status.name": 1, "studyUid": 1}, {"background": true});
+db.file.createIndex({"samples.uid": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.file.createIndex({"job.uid": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.file.createIndex({"_acl": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.file.createIndex({"studyUid": 1}, {"background": true});
+db.file.createIndex({"customAnnotationSets.as": 1}, {"background": true});
+db.file.createIndex({"customAnnotationSets.vs": 1}, {"background": true});
+db.file.createIndex({"customAnnotationSets.id": 1, "customAnnotationSets.value": 1}, {"background": true});
+
+db.sample.createIndex({"uuid": 1, "version": 1}, {"unique": true, "background": true});
+db.sample.createIndex({"uid": 1, "version": 1}, {"unique": true, "background": true});
+db.sample.createIndex({"id": 1, "studyUid": 1, "version": 1}, {"unique": true, "background": true});
+db.sample.createIndex({"_acl": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.sample.createIndex({"customAnnotationSets.as": 1}, {"background": true});
+db.sample.createIndex({"customAnnotationSets.vs": 1}, {"background": true});
+db.sample.createIndex({"customAnnotationSets.id": 1, "customAnnotationSets.value": 1}, {"background": true});
+db.sample.createIndex({"status.name": 1, "studyUid": 1}, {"background": true});
+db.sample.createIndex({"phenotypes.id": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.sample.createIndex({"studyUid": 1}, {"background": true});
+db.sample.createIndex({"_lastOfVersion": 1, "studyUid": 1}, {"background": true});
+
+db.individual.createIndex({"uuid": 1, "version": 1}, {"unique": true, "background": true});
+db.individual.createIndex({"uid": 1, "version": 1}, {"unique": true, "background": true});
+db.individual.createIndex({"id": 1, "studyUid": 1, "version": 1}, {"unique": true, "background": true});
+db.individual.createIndex({"name": 1, "studyUid": 1}, {"background": true});
+db.individual.createIndex({"_acl": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.individual.createIndex({"status.name": 1, "studyUid": 1}, {"background": true});
+db.individual.createIndex({"samples.uid": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.individual.createIndex({"phenotypes.id": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.individual.createIndex({"customAnnotationSets.as": 1}, {"background": true});
+db.individual.createIndex({"customAnnotationSets.vs": 1}, {"background": true});
+db.individual.createIndex({"customAnnotationSets.id": 1, "customAnnotationSets.value": 1}, {"background": true});
+db.individual.createIndex({"studyUid": 1}, {"background": true});
+db.individual.createIndex({"_lastOfVersion": 1, "studyUid": 1}, {"background": true});
+
+db.cohort.createIndex({"uuid": 1}, {"background": true});
+db.cohort.createIndex({"uid": 1}, {"background": true});
+db.cohort.createIndex({"id": 1, "studyUid": 1}, {"unique": true, "background": true});
+db.cohort.createIndex({"type": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.cohort.createIndex({"status.name": 1, "studyUid": 1}, {"background": true});
+db.cohort.createIndex({"_acl": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.cohort.createIndex({"customAnnotationSets.as": 1}, {"background": true});
+db.cohort.createIndex({"customAnnotationSets.vs": 1}, {"background": true});
+db.cohort.createIndex({"customAnnotationSets.id": 1, "customAnnotationSets.value": 1}, {"background": true});
+db.cohort.createIndex({"studyUid": 1}, {"background": true});
+
+db.family.createIndex({"uuid": 1, "version": 1}, {"unique": true, "background": true});
+db.family.createIndex({"uid": 1, "version": 1}, {"unique": true, "background": true});
+db.family.createIndex({"id": 1, "studyUid": 1, "version": 1}, {"unique": true, "background": true});
+db.family.createIndex({"name": 1, "studyUid": 1}, {"background": true});
+db.family.createIndex({"members.uid": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.family.createIndex({"_acl": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.family.createIndex({"status.name": 1, "studyUid": 1}, {"background": true});
+db.family.createIndex({"customAnnotationSets.as": 1}, {"background": true});
+db.family.createIndex({"customAnnotationSets.vs": 1}, {"background": true});
+db.family.createIndex({"customAnnotationSets.id": 1, "customAnnotationSets.value": 1}, {"background": true});
+db.family.createIndex({"_lastOfVersion": 1, "studyUid": 1}, {"background": true});
+db.family.createIndex({"studyUid": 1}, {"background": true});
+
+db.diseasePanel.createIndex({"uuid": 1, "version": 1}, {"unique": true, "background": true});
+db.diseasePanel.createIndex({"uid": 1, "version": 1}, {"unique": true, "background": true});
+db.diseasePanel.createIndex({"id": 1, "studyUid": 1, "version": 1}, {"unique": true, "background": true});
+db.diseasePanel.createIndex({"_lastOfVersion": 1, "studyUid": 1}, {"background": true});
+db.diseasePanel.createIndex({"studyUid": 1}, {"background": true});
+
+// #912
+db.job.createIndex({"_creationDate": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.job.createIndex({"_modificationDate": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+
+db.file.createIndex({"_creationDate": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.file.createIndex({"_modificationDate": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+
+db.sample.createIndex({"_creationDate": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.sample.createIndex({"_modificationDate": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+
+db.individual.createIndex({"_creationDate": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.individual.createIndex({"_modificationDate": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+
+db.cohort.createIndex({"_creationDate": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.cohort.createIndex({"_modificationDate": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+
+db.family.createIndex({"_creationDate": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.family.createIndex({"_modificationDate": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+
+db.diseasePanel.createIndex({"_creationDate": 1, "studyUid": 1, "status.name": 1}, {"background": true});
+db.diseasePanel.createIndex({"_modificationDate": 1, "studyUid": 1, "status.name": 1}, {"background": true});
 
 // Ticket #745 - Add permission rules
 function addPermissionRules(doc, changes) {
@@ -462,13 +648,10 @@ function changeVariableIds(variables) {
 }
 
 function generateOpenCGAUUID(entity, date) {
-    var mostSignificantBits = padLeft(getMostSignificantBits(entity, date).toString(16), 16);
-    var leastSignificantBits = padLeft(getLeastSignificantBits().toString(16), 16);
+    var mostSignificantBits = getMostSignificantBits(entity, date);
+    var leastSignificantBits = getLeastSignificantBits();
 
-    var uuid = mostSignificantBits.slice(0, 8) + "-" + mostSignificantBits.slice(8, 12) + "-" + mostSignificantBits.slice(12, 16) + "-"
-        + leastSignificantBits.slice(0, 4) + "-" + leastSignificantBits.slice(4, 16);
-
-    return Base64.encode(uuid);
+    return base64ArrayBuffer(mostSignificantBits.toBytes().concat(leastSignificantBits.toBytes())).slice(0, 22);
 }
 
 function getMostSignificantBits(entity, date) {
@@ -492,16 +675,4 @@ function getLeastSignificantBits() {
     var rand = Long.fromNumber(Math.random() * 100000000000000000);
     var randomNumber = rand.and(0xffffffffffff);
     return installation.shiftLeft(48).or(randomNumber);
-}
-
-function padLeft(hexString, length) {
-    if (hexString.length === length) {
-        return hexString
-    }
-
-    var tmpString = hexString;
-    for (var i = hexString.length; i < length; i++) {
-        tmpString = "0" + tmpString;
-    }
-    return tmpString;
 }

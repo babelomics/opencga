@@ -16,6 +16,7 @@
 
 package org.opencb.opencga.core.models;
 
+import org.opencb.biodata.models.commons.Phenotype;
 import org.opencb.opencga.core.common.TimeUtils;
 import org.opencb.opencga.core.models.acls.AclParams;
 
@@ -42,7 +43,7 @@ public class Sample extends Annotable {
     private String description;
     private String type;
     private boolean somatic;
-    private List<OntologyTerm> phenotypes;
+    private List<Phenotype> phenotypes;
 
     @Deprecated
     private Map<String, Object> stats;
@@ -58,7 +59,7 @@ public class Sample extends Annotable {
     }
 
     public Sample(String id, String source, Individual individual, String description, String type, boolean somatic, int release,
-                  int version, List<AnnotationSet> annotationSets, List<OntologyTerm> phenotypeList, Map<String, Object> stats,
+                  int version, List<AnnotationSet> annotationSets, List<Phenotype> phenotypeList, Map<String, Object> stats,
                   Map<String, Object> attributes) {
         this.id = id;
         this.source = source;
@@ -261,11 +262,11 @@ public class Sample extends Annotable {
         return this;
     }
 
-    public List<OntologyTerm> getPhenotypes() {
+    public List<Phenotype> getPhenotypes() {
         return phenotypes;
     }
 
-    public Sample setPhenotypes(List<OntologyTerm> phenotypes) {
+    public Sample setPhenotypes(List<Phenotype> phenotypes) {
         this.phenotypes = phenotypes;
         return this;
     }

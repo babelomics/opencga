@@ -19,6 +19,7 @@ package org.opencb.opencga.storage.hadoop.variant.adaptors;
 import com.google.common.collect.Sets;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.filter.*;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -47,6 +48,7 @@ import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static org.opencb.opencga.storage.core.variant.VariantStorageEngine.Options.SEARCH_INDEX_LAST_TIMESTAMP;
 import static org.opencb.opencga.storage.core.variant.adaptors.VariantQueryParam.*;
 import static org.opencb.opencga.storage.core.variant.adaptors.VariantQueryUtils.*;
 import static org.opencb.opencga.storage.hadoop.variant.index.phoenix.VariantPhoenixHelper.VariantColumn.*;
@@ -72,6 +74,7 @@ public class VariantHBaseQueryParser {
             INCLUDE_FILE,
             INCLUDE_STUDY,
             INCLUDE_SAMPLE,
+            INCLUDE_FORMAT,
             UNKNOWN_GENOTYPE));
 
     public VariantHBaseQueryParser(GenomeHelper genomeHelper, StudyConfigurationManager studyConfigurationManager) {
@@ -131,13 +134,6 @@ public class VariantHBaseQueryParser {
                 messages.add("Negated files not supported");
             }
             otherParams.remove(FILE);
-        }
-        if (otherParams.contains(SAMPLE)) {
-            String value = query.getString(SAMPLE.key());
-            if (splitValue(value).getValue().stream().anyMatch(VariantQueryUtils::isNegated)) {
-                messages.add("Negated samples not supported");
-            }
-            otherParams.remove(SAMPLE);
         }
         if (otherParams.contains(GENOTYPE)) {
             HashMap<Object, List<String>> map = new HashMap<>();
@@ -250,12 +246,14 @@ public class VariantHBaseQueryParser {
 
         List<Region> regions = getRegions(query);
 
+        Object regionOrVariant = null;
         if (regions != null && !regions.isEmpty()) {
             if (regions.size() > 1) {
                 throw VariantQueryException.malformedParam(REGION, regions.toString(), "Unsupported multiple region filter");
             }
             Region region = regions.get(0);
-            logger.debug("region = " + region);
+            regionOrVariant = region;
+            logger.debug("region = {}", region);
             addRegionFilter(scan, region);
         } else if (isValidParam(query, ID)) {
             List<String> ids = query.getAsStringList(ID.key());
@@ -264,8 +262,8 @@ public class VariantHBaseQueryParser {
             }
             Variant variant = VariantQueryUtils.toVariant(ids.get(0));
             addVariantIdFilter(scan, variant);
+            regionOrVariant = variant;
         }
-
 
 //        if (isValidParam(query, ID)) {
 //            List<String> ids = query.getAsStringList(ID.key());
@@ -302,6 +300,31 @@ public class VariantHBaseQueryParser {
             } else {
                 logger.warn("Filter " + ANNOTATION_EXISTS.key() + "=true not implemented in native mode");
             }
+        }
+
+        Map<String, Integer> studies = studyConfigurationManager.getStudies(null);
+        Set<String> studyNames = studies.keySet();
+        if (query.getBoolean(VARIANTS_TO_INDEX.key(), false)) {
+
+            scan.addColumn(genomeHelper.getColumnFamily(), INDEX_NOT_SYNC.bytes());
+            scan.addColumn(genomeHelper.getColumnFamily(), INDEX_UNKNOWN.bytes());
+            scan.addColumn(genomeHelper.getColumnFamily(), INDEX_STUDIES.bytes());
+
+            Filter f1 = existingColumnFilter(INDEX_NOT_SYNC.bytes());
+            Filter f2 = existingColumnFilter(INDEX_UNKNOWN.bytes());
+            filters.addFilter(new FilterList(FilterList.Operator.MUST_PASS_ONE, f1, f2));
+
+
+            long ts = studyConfigurationManager.getProjectMetadata().first().getAttributes()
+                    .getLong(SEARCH_INDEX_LAST_TIMESTAMP.key());
+            if (ts > 0 && scan.getStartRow() == HConstants.EMPTY_START_ROW) {
+                try {
+                    scan.setTimeRange(ts, Long.MAX_VALUE);
+                } catch (IOException e) {
+                    throw VariantQueryException.internalException(e);
+                }
+            } // Otherwise, get all variants
+
         }
 
         if (selectElements.getFields().contains(VariantField.STUDIES)) {
@@ -378,7 +401,6 @@ public class VariantHBaseQueryParser {
             }
             for (Map.Entry<Object, List<String>> entry : genotypesMap.entrySet()) {
                 if (defaultStudyConfiguration == null) {
-                    List<String> studyNames = studyConfigurationManager.getStudyNames(null);
                     throw VariantQueryException.missingStudyForSample(entry.getKey().toString(), studyNames);
                 }
                 int studyId = defaultStudyConfiguration.getStudyId();
@@ -419,50 +441,7 @@ public class VariantHBaseQueryParser {
         }
 
         if (isValidParam(query, SAMPLE)) {
-            String value = query.getString(SAMPLE.key());
-            VariantQueryUtils.QueryOperation operation = checkOperator(value);
-            List<String> values = splitValue(value, operation);
-            FilterList subFilters;
-            if (operation == QueryOperation.OR) {
-                subFilters = new FilterList(FilterList.Operator.MUST_PASS_ONE);
-                filters.addFilter(subFilters);
-            } else {
-                subFilters = filters;
-            }
-            for (String sample : values) {
-                if (defaultStudyConfiguration == null) {
-                    List<String> studyNames = studyConfigurationManager.getStudyNames(null);
-                    throw VariantQueryException.missingStudyForSample(sample, studyNames);
-                }
-                Integer sampleId = StudyConfigurationManager.getSampleIdFromStudy(sample, defaultStudyConfiguration, true);
-                if (sampleId == null) {
-                    List<String> studyNames = studyConfigurationManager.getStudyNames(null);
-                    throw VariantQueryException.missingStudyForSample(sample, studyNames);
-                }
-                byte[] column = buildSampleColumnKey(defaultStudyConfiguration.getStudyId(), sampleId);
-                if (isNegated(sample)) {
-                    subFilters.addFilter(missingColumnFilter(column));
-                } else {
-                    // Check on only if the column exists. Also check if the GT starts contains a 1 ( 1/? or ?/1 )
-                    filteredStudies.add(defaultStudyConfiguration.getStudyId());
-
-                    // 1/?
-                    SingleColumnValueFilter filter1 = new SingleColumnValueFilter(family, column, CompareFilter.CompareOp.EQUAL,
-                            new BinaryPrefixComparator(Bytes.toBytes("1")));
-                    filter1.setFilterIfMissing(true);
-                    filter1.setLatestVersionOnly(true);
-
-                    // ?/1
-                    SingleColumnValueFilter filter2 = new SingleColumnValueFilter(family, column, CompareFilter.CompareOp.EQUAL,
-                            new RegexStringComparator("^[\\.0-9][/\\|]1")
-                    );
-                    filter2.setFilterIfMissing(true);
-                    filter2.setLatestVersionOnly(true);
-
-                    subFilters.addFilter(new FilterList(FilterList.Operator.MUST_PASS_ONE, filter1, filter2));
-                }
-                scan.addColumn(family, column);
-            }
+            throw VariantQueryException.unsupportedVariantQueryFilter(SAMPLE, "hbase-native-query");
         }
 
         if (isValidParam(query, STUDY)) {
@@ -498,10 +477,12 @@ public class VariantHBaseQueryParser {
                 scan.addColumn(family, Bytes.toBytes(VariantPhoenixHelper.getAnnotationSnapshotColumn(id)));
             } else {
                 scan.addColumn(family, FULL_ANNOTATION.bytes());
-            }
-            int release = studyConfigurationManager.getProjectMetadata().first().getRelease();
-            for (int i = 1; i <= release; i++) {
-                scan.addColumn(family, VariantPhoenixHelper.buildReleaseColumnKey(i));
+                scan.addColumn(family, ANNOTATION_ID.bytes());
+                // Only return RELEASE when reading current annotation
+                int release = studyConfigurationManager.getProjectMetadata().first().getRelease();
+                for (int i = 1; i <= release; i++) {
+                    scan.addColumn(family, VariantPhoenixHelper.buildReleaseColumnKey(i));
+                }
             }
         }
 
@@ -533,12 +514,19 @@ public class VariantHBaseQueryParser {
 //        scan.setMaxResultSize(limit);
         scan.setReversed(options.getString(QueryOptions.ORDER, QueryOptions.ASCENDING).equals(QueryOptions.DESCENDING));
 
+        logger.info("----------------------------");
         logger.info("StartRow = " + Bytes.toStringBinary(scan.getStartRow()));
         logger.info("StopRow = " + Bytes.toStringBinary(scan.getStopRow()));
+        if (regionOrVariant != null) {
+            logger.info("\tRegion = " + regionOrVariant);
+        }
         logger.info("columns = " + scan.getFamilyMap().getOrDefault(family, Collections.emptyNavigableSet())
                 .stream().map(Bytes::toString).collect(Collectors.joining(",")));
         logger.info("MaxResultSize = " + scan.getMaxResultSize());
         logger.info("Filters = " + scan.getFilter());
+        if (!scan.getTimeRange().isAllTime()) {
+            logger.info("TimeRange = " + scan.getTimeRange());
+        }
         logger.info("Batch = " + scan.getBatch());
         return scan;
     }

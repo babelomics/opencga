@@ -20,10 +20,10 @@ import com.beust.jcommander.JCommander;
 import com.beust.jcommander.Parameter;
 import com.beust.jcommander.Parameters;
 import com.beust.jcommander.ParametersDelegate;
+import org.opencb.biodata.models.pedigree.IndividualProperty;
 import org.opencb.opencga.app.cli.GeneralCliOptions;
 import org.opencb.opencga.app.cli.main.options.commons.AclCommandOptions;
 import org.opencb.opencga.app.cli.main.options.commons.AnnotationCommandOptions;
-import org.opencb.opencga.core.models.Individual;
 
 import static org.opencb.opencga.app.cli.GeneralCliOptions.*;
 
@@ -40,6 +40,7 @@ public class IndividualCommandOptions {
     public DeleteCommandOptions deleteCommandOptions;
     public GroupByCommandOptions groupByCommandOptions;
     public SampleCommandOptions sampleCommandOptions;
+    public StatsCommandOptions statsCommandOptions;
 
     public IndividualAclCommandOptions.AclsCommandOptions aclsCommandOptions;
     public IndividualAclCommandOptions.AclsUpdateCommandOptions aclsUpdateCommandOptions;
@@ -70,6 +71,7 @@ public class IndividualCommandOptions {
         this.deleteCommandOptions = new DeleteCommandOptions();
         this.groupByCommandOptions = new GroupByCommandOptions();
         this.sampleCommandOptions = new SampleCommandOptions();
+        this.statsCommandOptions = new StatsCommandOptions();
 
         AnnotationCommandOptions annotationCommandOptions = new AnnotationCommandOptions(commonCommandOptions);
         this.annotationCreateCommandOptions = annotationCommandOptions.getCreateCommandOptions();
@@ -278,7 +280,7 @@ public class IndividualCommandOptions {
         public String family;
 
         @Parameter(names = {"--sex"}, description = "Sex", required = false)
-        public Individual.Sex sex;
+        public IndividualProperty.Sex sex;
 
         @Parameter(names = {"--ethnicity"}, description = "Ethnic group", required = false, arity = 1)
         public String ethnicity;
@@ -342,7 +344,8 @@ public class IndividualCommandOptions {
 //            @Parameter(names = {"--individual"}, description = "Comma separated list of individual ids or names", arity = 1)
 //            public String individual;
 
-            @Parameter(names = {"--sample"}, description = "Comma separated list of sample ids or names", arity = 1)
+            @Parameter(names = {"--sample"}, description = "Comma separated list of sample ids or file containing the list of ids "
+                    + "(one per line)", arity = 1)
             public String sample;
 
             @Parameter(names = {"--propagate"}, description = "Flag parameter indicating whether to propagate the permissions to the " +
@@ -356,6 +359,87 @@ public class IndividualCommandOptions {
             }
             return aclsUpdateCommandOptions;
         }
+    }
+
+    @Parameters(commandNames = {"stats"}, commandDescription = "Individual stats")
+    public class StatsCommandOptions extends StudyOption {
+
+        @ParametersDelegate
+        public CommonCommandOptions commonOptions = commonCommandOptions;
+
+        @Parameter(names = {"--default"}, description = "Flag to calculate default stats", arity = 0)
+        public boolean defaultStats;
+
+        @Parameter(names = {"--creation-year"}, description = "Creation year.", arity = 1)
+        public String creationYear;
+
+        @Parameter(names = {"--creation-month"}, description = "Creation month (JANUARY, FEBRUARY...).", arity = 1)
+        public String creationMonth;
+
+        @Parameter(names = {"--creation-day"}, description = "Creation day.", arity = 1)
+        public String creationDay;
+
+        @Parameter(names = {"--creation-day-of-week"}, description = "Creation day of week (MONDAY, TUESDAY...).", arity = 1)
+        public String creationDayOfWeek;
+
+        @Parameter(names = {"--status"}, description = "Status.", arity = 1)
+        public String status;
+
+        @Parameter(names = {"--life-status"}, description = "Life status.", arity = 1)
+        public String lifeStatus;
+
+        @Parameter(names = {"--affectation-status"}, description = "Affectation status.", arity = 1)
+        public String affectationStatus;
+
+        @Parameter(names = {"--num-samples"}, description = "Number of samples", arity = 1)
+        public String numSamples;
+
+        @Parameter(names = {"--release"}, description = "Release.", arity = 1)
+        public String release;
+
+        @Parameter(names = {"--version"}, description = "Version.", arity = 1)
+        public String version;
+
+        @Parameter(names = {"--has-father"}, description = "Has father.", arity = 1)
+        public Boolean hasFather;
+
+        @Parameter(names = {"--has-mother"}, description = "Has mother.", arity = 1)
+        public Boolean hasMother;
+
+        @Parameter(names = {"--num-multiples"}, description = "Number of multiples.", arity = 1)
+        public String numMultiples;
+
+        @Parameter(names = {"--multiples-type"}, description = "Type of multiples.", arity = 1)
+        public String multiplesType;
+
+        @Parameter(names = {"--sex"}, description = "Sex.", arity = 1)
+        public String sex;
+
+        @Parameter(names = {"--karyotypic-sex"}, description = "Karyotypic sex.", arity = 1)
+        public String karyotypicSex;
+
+        @Parameter(names = {"--ethnicity"}, description = "Ethnicity.", arity = 1)
+        public String ethnicity;
+
+        @Parameter(names = {"--population"}, description = "Population.", arity = 1)
+        public String population;
+
+        @Parameter(names = {"--phenotypes"}, description = "Phenotypes.", arity = 1)
+        public String phenotypes;
+
+        @Parameter(names = {"--parental-consanguinity"}, description = "Parental consanguinity.", arity = 1)
+        public Boolean parentalConsanguinity;
+
+        @Parameter(names = {"--annotation"}, description = "Annotation. See documentation to see the options.", arity = 1)
+        public String annotation;
+
+        @Parameter(names = {"--field"}, description = "List of fields separated by semicolons, e.g.: studies;type. For nested "
+                + "fields use >>, e.g.: studies>>biotype;type.", arity = 1)
+        public String field;
+
+        @Parameter(names = {"--field-range"}, description = "List of field ranges separated by semicolons with the format"
+                + " {field_name}:{start}:{end}:{step}, e.g.: sift:0:1:0.2;caddRaw:0:30:1.", arity = 1)
+        public String fieldRange;
     }
 
 }

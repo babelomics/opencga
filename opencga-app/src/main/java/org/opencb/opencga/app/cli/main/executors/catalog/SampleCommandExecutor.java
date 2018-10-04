@@ -80,6 +80,9 @@ public class SampleCommandExecutor extends OpencgaCommandExecutor {
             case "groupBy":
                 queryResponse = groupBy();
                 break;
+            case "stats":
+                queryResponse = stats();
+                break;
             case "individuals":
                 queryResponse = getIndividuals();
                 break;
@@ -260,12 +263,39 @@ public class SampleCommandExecutor extends OpencgaCommandExecutor {
         bodyParams.putIfNotNull("permissions", commandOptions.permissions);
         bodyParams.putIfNotNull("propagate", commandOptions.propagate);
         bodyParams.putIfNotNull("action", commandOptions.action);
-        bodyParams.putIfNotNull("sample", commandOptions.id);
-        bodyParams.putIfNotNull("individual", commandOptions.individual);
-        bodyParams.putIfNotNull("cohort", commandOptions.cohort);
-        bodyParams.putIfNotNull("file", commandOptions.file);
+        bodyParams.putIfNotNull("sample", extractIdsFromListOrFile(commandOptions.id));
+        bodyParams.putIfNotNull("individual", extractIdsFromListOrFile(commandOptions.individual));
+        bodyParams.putIfNotNull("cohort", extractIdsFromListOrFile(commandOptions.cohort));
+        bodyParams.putIfNotNull("file", extractIdsFromListOrFile(commandOptions.file));
 
         return openCGAClient.getSampleClient().updateAcl(commandOptions.memberId, queryParams, bodyParams);
+    }
+
+    private QueryResponse stats() throws IOException {
+        logger.debug("Individual stats");
+
+        SampleCommandOptions.StatsCommandOptions commandOptions = samplesCommandOptions.statsCommandOptions;
+
+        Query query = new Query();
+        query.putIfNotEmpty("creationYear", commandOptions.creationYear);
+        query.putIfNotEmpty("creationMonth", commandOptions.creationMonth);
+        query.putIfNotEmpty("creationDay", commandOptions.creationDay);
+        query.putIfNotEmpty("creationDayOfWeek", commandOptions.creationDayOfWeek);
+        query.putIfNotEmpty("status", commandOptions.status);
+        query.putIfNotEmpty("source", commandOptions.source);
+        query.putIfNotEmpty("type", commandOptions.type);
+        query.putIfNotEmpty("phenotypes", commandOptions.phenotypes);
+        query.putIfNotEmpty("release", commandOptions.release);
+        query.putIfNotEmpty("version", commandOptions.version);
+        query.putIfNotNull("somatic", commandOptions.somatic);
+        query.putIfNotEmpty(Constants.ANNOTATION, commandOptions.annotation);
+
+        QueryOptions options = new QueryOptions();
+        options.put("default", commandOptions.defaultStats);
+        options.putIfNotNull("field", commandOptions.field);
+        options.putIfNotNull("fieldRange", commandOptions.fieldRange);
+
+        return openCGAClient.getSampleClient().stats(commandOptions.study, query, options);
     }
 
 }

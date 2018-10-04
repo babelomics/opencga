@@ -142,7 +142,7 @@ public class VariantFileIndexerStorageOperation extends StorageOperation {
         String studyFQNByInputFileId = studyInfo.getStudyFQN();
 
         options.put(VariantStorageEngine.Options.STUDY.key(), studyFQNByInputFileId);
-        options.put(VariantStorageEngine.Options.AGGREGATED_TYPE.key(), getAggregation(studyFQNByInputFileId, options, sessionId));
+        options.putIfAbsent(VariantStorageEngine.Options.AGGREGATED_TYPE.key(), getAggregation(studyFQNByInputFileId, options, sessionId));
 
 //        Study study = catalogManager.getStudyManager().get(studyUidByInputFileId, new QueryOptions(), sessionId).getResult().get(0);
         Study study = studyInfo.getStudy();
@@ -316,6 +316,8 @@ public class VariantFileIndexerStorageOperation extends StorageOperation {
         }
         Runtime.getRuntime().removeShutdownHook(hook);
 
+        variantStorageEngine.close();
+
         // Throw the exception!
         if (exception != null) {
             throw exception;
@@ -437,10 +439,14 @@ public class VariantFileIndexerStorageOperation extends StorageOperation {
                         break;
                     case FileIndex.IndexStatus.LOADING:
                         if (jobFailed) {
+                            if (indexedFile.getIndex().getTransformedFile() == null) {
+                                indexStatusName = FileIndex.IndexStatus.NONE;
+                            } else {
+                                indexStatusName = FileIndex.IndexStatus.TRANSFORMED;
+                            }
                             indexStatusMessage = "Job failed. Restoring status from " + FileIndex.IndexStatus.LOADING + " to "
-                                    + FileIndex.IndexStatus.TRANSFORMED;
+                                    + indexStatusName;
                             logger.warn(indexStatusMessage);
-                            indexStatusName = FileIndex.IndexStatus.TRANSFORMED;
                         } else {
                             indexStatusMessage = "Job finished. File index ready";
                             indexStatusName = FileIndex.IndexStatus.READY;
@@ -450,7 +456,9 @@ public class VariantFileIndexerStorageOperation extends StorageOperation {
                         if (jobFailed) {
                             // If transform was executed, restore status to Transformed.
                             if (transformedSuccess && saveIntermediateFiles) {
-//                            if (transformedSuccess) {
+                                indexStatusName = FileIndex.IndexStatus.TRANSFORMED;
+                            } else if (indexedFile.getIndex().getTransformedFile() != null) {
+                                // If transform file already exists, restore to Transformed
                                 indexStatusName = FileIndex.IndexStatus.TRANSFORMED;
                             } else {
                                 indexStatusName = FileIndex.IndexStatus.NONE;

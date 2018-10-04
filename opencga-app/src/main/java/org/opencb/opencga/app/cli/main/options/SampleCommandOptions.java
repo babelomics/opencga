@@ -39,6 +39,7 @@ public class SampleCommandOptions {
     public DeleteCommandOptions deleteCommandOptions;
     public GroupByCommandOptions groupByCommandOptions;
     public IndividualCommandOptions individualCommandOptions;
+    public StatsCommandOptions statsCommandOptions;
 
     public AclCommandOptions.AclsCommandOptions aclsCommandOptions;
     public SampleAclCommandOptions.AclsUpdateCommandOptions aclsUpdateCommandOptions;
@@ -70,6 +71,7 @@ public class SampleCommandOptions {
         this.deleteCommandOptions = new DeleteCommandOptions();
         this.groupByCommandOptions = new GroupByCommandOptions();
         this.individualCommandOptions = new IndividualCommandOptions();
+        this.statsCommandOptions = new StatsCommandOptions();
 
         AnnotationCommandOptions annotationCommandOptions = new AnnotationCommandOptions(commonCommandOptions);
         this.annotationCreateCommandOptions = annotationCommandOptions.getCreateCommandOptions();
@@ -255,13 +257,16 @@ public class SampleCommandOptions {
 //            @Parameter(names = {"--sample"}, description = "Comma separated list of sample ids or names", arity = 1)
 //            public String sample;
 
-            @Parameter(names = {"--file"}, description = "Comma separated list of file ids, names or paths", arity = 1)
+            @Parameter(names = {"--file"}, description = "Comma separated list of file ids, names or paths or file containing the list of "
+                    + "ids (one per line)", arity = 1)
             public String file;
 
-            @Parameter(names = {"--individual"}, description = "Comma separated list of individual ids or names", arity = 1)
+            @Parameter(names = {"--individual"}, description = "Comma separated list of individual ids or file containing the list of ids "
+                    + "(one per line)", arity = 1)
             public String individual;
 
-            @Parameter(names = {"--cohort"}, description = "Comma separated list of cohort ids or names", arity = 1)
+            @Parameter(names = {"--cohort"}, description = "Comma separated list of cohort ids or file containing the list of ids "
+                    + "(one per line)", arity = 1)
             public String cohort;
 
             @Parameter(names = {"--propagate"}, description = "Flag parameter indicating whether to propagate the permissions to the " +
@@ -275,6 +280,60 @@ public class SampleCommandOptions {
             }
             return aclsUpdateCommandOptions;
         }
+    }
+
+    @Parameters(commandNames = {"stats"}, commandDescription = "Sample stats")
+    public class StatsCommandOptions extends StudyOption {
+
+        @ParametersDelegate
+        public CommonCommandOptions commonOptions = commonCommandOptions;
+
+        @Parameter(names = {"--default"}, description = "Flag to calculate default stats", arity = 0)
+        public boolean defaultStats;
+
+        @Parameter(names = {"--creation-year"}, description = "Creation year.", arity = 1)
+        public String creationYear;
+
+        @Parameter(names = {"--creation-month"}, description = "Creation month (JANUARY, FEBRUARY...).", arity = 1)
+        public String creationMonth;
+
+        @Parameter(names = {"--creation-day"}, description = "Creation day.", arity = 1)
+        public String creationDay;
+
+        @Parameter(names = {"--creation-day-of-week"}, description = "Creation day of week (MONDAY, TUESDAY...).", arity = 1)
+        public String creationDayOfWeek;
+
+        @Parameter(names = {"--type"}, description = "Type.", arity = 1)
+        public String type;
+
+        @Parameter(names = {"--status"}, description = "Status.", arity = 1)
+        public String status;
+
+        @Parameter(names = {"--source"}, description = "Source", arity = 1)
+        public String source;
+
+        @Parameter(names = {"--release"}, description = "Release.", arity = 1)
+        public String release;
+
+        @Parameter(names = {"--version"}, description = "Version.", arity = 1)
+        public String version;
+
+        @Parameter(names = {"--phenotypes"}, description = "Phenotypes.", arity = 1)
+        public String phenotypes;
+
+        @Parameter(names = {"--somatic"}, description = "Somatic.", arity = 1)
+        public Boolean somatic;
+
+        @Parameter(names = {"--annotation"}, description = "Annotation. See documentation to see the options.", arity = 1)
+        public String annotation;
+
+        @Parameter(names = {"--field"}, description = "List of fields separated by semicolons, e.g.: studies;type. For nested "
+                + "fields use >>, e.g.: studies>>biotype;type.", arity = 1)
+        public String field;
+
+        @Parameter(names = {"--field-range"}, description = "List of field ranges separated by semicolons with the format"
+                + " {field_name}:{start}:{end}:{step}, e.g.: sift:0:1:0.2;caddRaw:0:30:1.", arity = 1)
+        public String fieldRange;
     }
 
 }

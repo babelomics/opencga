@@ -27,6 +27,7 @@ import org.opencb.opencga.app.cli.main.options.FamilyCommandOptions;
 import org.opencb.opencga.app.cli.main.options.commons.AclCommandOptions;
 import org.opencb.opencga.catalog.db.api.FamilyDBAdaptor;
 import org.opencb.opencga.catalog.exceptions.CatalogException;
+import org.opencb.opencga.catalog.utils.Constants;
 import org.opencb.opencga.core.models.Family;
 import org.opencb.opencga.core.models.acls.permissions.FamilyAclEntry;
 
@@ -64,6 +65,9 @@ public class FamilyCommandExecutor extends OpencgaCommandExecutor {
                 break;
             case "search":
                 queryResponse = search();
+                break;
+            case "stats":
+                queryResponse = stats();
                 break;
 //            case "update":
 //                queryResponse = update();
@@ -167,6 +171,32 @@ public class FamilyCommandExecutor extends OpencgaCommandExecutor {
         }
     }
 
+    private QueryResponse stats() throws IOException {
+        logger.debug("Family stats");
+
+        FamilyCommandOptions.StatsCommandOptions commandOptions = familyCommandOptions.statsCommandOptions;
+
+        Query query = new Query();
+        query.putIfNotEmpty("creationYear", commandOptions.creationYear);
+        query.putIfNotEmpty("creationMonth", commandOptions.creationMonth);
+        query.putIfNotEmpty("creationDay", commandOptions.creationDay);
+        query.putIfNotEmpty("creationDayOfWeek", commandOptions.creationDayOfWeek);
+        query.putIfNotEmpty("phenotypes", commandOptions.phenotypes);
+        query.putIfNotEmpty("status", commandOptions.status);
+        query.putIfNotEmpty("numMembers", commandOptions.numMembers);
+        query.putIfNotEmpty("release", commandOptions.release);
+        query.putIfNotEmpty("version", commandOptions.version);
+        query.putIfNotEmpty("expectedSize", commandOptions.expectedSize);
+        query.putIfNotEmpty(Constants.ANNOTATION, commandOptions.annotation);
+
+        QueryOptions options = new QueryOptions();
+        options.put("default", commandOptions.defaultStats);
+        options.putIfNotNull("field", commandOptions.field);
+        options.putIfNotNull("fieldRange", commandOptions.fieldRange);
+
+        return openCGAClient.getFamilyClient().stats(commandOptions.study, query, options);
+    }
+
 //
 //    private QueryResponse<Family> update() throws CatalogException, IOException {
 //        logger.debug("Updating individual information");
@@ -195,7 +225,7 @@ public class FamilyCommandExecutor extends OpencgaCommandExecutor {
         ObjectMap bodyParams = new ObjectMap();
         bodyParams.putIfNotNull("permissions", commandOptions.permissions);
         bodyParams.putIfNotNull("action", commandOptions.action);
-        bodyParams.putIfNotNull("family", commandOptions.id);
+        bodyParams.putIfNotNull("family", extractIdsFromListOrFile(commandOptions.id));
 
         return openCGAClient.getFamilyClient().updateAcl(commandOptions.memberId, queryParams, bodyParams);
     }

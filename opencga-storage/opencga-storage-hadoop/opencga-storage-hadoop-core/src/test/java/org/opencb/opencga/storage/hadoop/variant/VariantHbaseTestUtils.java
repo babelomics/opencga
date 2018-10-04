@@ -150,7 +150,8 @@ public class VariantHbaseTestUtils {
         PrintStream os = new PrintStream(new FileOutputStream(outputFile.toFile()));
         int numVariants = hm.act(tableName, table -> {
             int num = 0;
-            ResultScanner resultScanner = table.getScanner(genomeHelper.getColumnFamily());
+            byte[] family = genomeHelper.getColumnFamily();
+            ResultScanner resultScanner = table.getScanner(family);
             for (Result result : resultScanner) {
                 Variant variant;
                 try {
@@ -160,13 +161,14 @@ public class VariantHbaseTestUtils {
                     os.println("--------------------");
                     continue;
                 }
-                os.println("Variant = " + variant);
-                for (Map.Entry<byte[], byte[]> entry : result.getFamilyMap(genomeHelper.getColumnFamily()).entrySet()) {
+                os.println("Variant = " + variant + "  " + Bytes.toStringBinary(result.getRow()));
+                for (Map.Entry<byte[], byte[]> entry : result.getFamilyMap(family).entrySet()) {
                     String key = Bytes.toString(entry.getKey());
                     PhoenixHelper.Column column = VariantPhoenixHelper.VariantColumn.getColumn(key);
                     if (column != null) {
                         os.println("\t" + key + " = " + length(entry.getValue()) + ", "
-                                + column.getPDataType().toObject(entry.getValue()));
+                                + column.getPDataType().toObject(entry.getValue())
+                         + ", ts:" + result.getColumnLatestCell(family, column.bytes()).getTimestamp());
                     } else if (key.endsWith(VariantPhoenixHelper.STATS_PROTOBUF_SUFIX)) {
 //                        ComplexFilter complexFilter = ComplexFilter.parseFrom(entry.getValue());
                         os.println("\t" + key + " = " + length(entry.getValue()) + ", " + Arrays.toString(entry.getValue()));
@@ -399,6 +401,10 @@ public class VariantHbaseTestUtils {
     private static void printSamplesIndexTable(VariantHadoopDBAdaptor dbAdaptor, Path outDir) throws IOException {
         for (Integer studyId : dbAdaptor.getStudyConfigurationManager().getStudies(null).values()) {
             String sampleGtTableName = dbAdaptor.getTableNameGenerator().getSampleIndexTableName(studyId);
+            if (!dbAdaptor.getHBaseManager().tableExists(sampleGtTableName)) {
+                // Skip table
+                return;
+            }
             Path fileName = outDir.resolve(sampleGtTableName + ".txt");
             try (
                     FileOutputStream fos = new FileOutputStream(fileName.toFile()); PrintStream out = new PrintStream(fos)

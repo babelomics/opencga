@@ -11,6 +11,7 @@ import org.apache.hadoop.mapreduce.Counter;
 import org.apache.hadoop.mapreduce.Job;
 import org.opencb.biodata.models.variant.Variant;
 import org.opencb.opencga.storage.core.exceptions.StorageEngineException;
+import org.opencb.opencga.storage.core.variant.VariantStorageEngine;
 import org.opencb.opencga.storage.hadoop.variant.AbstractVariantsTableDriver;
 import org.opencb.opencga.storage.hadoop.variant.GenomeHelper;
 import org.opencb.opencga.storage.hadoop.variant.HadoopVariantStorageEngine;
@@ -22,8 +23,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.*;
-
-import static org.opencb.opencga.storage.hadoop.variant.HadoopVariantStorageEngine.LOADED_GENOTYPES;
 
 /**
  * Creates and executes a MR job that finishes loading all the pending variants in the SampleIndex table.
@@ -39,7 +38,7 @@ import static org.opencb.opencga.storage.hadoop.variant.HadoopVariantStorageEngi
  */
 public class SampleIndexConsolidationDrive extends AbstractVariantsTableDriver {
     public static final String GENOTYPES_COUNTER_GROUP_NAME = "genotypes";
-    private final Logger logger = LoggerFactory.getLogger(SampleIndexConsolidationDrive.class);
+    private static final Logger LOG = LoggerFactory.getLogger(SampleIndexConsolidationDrive.class);
     private String sampleIndexTable;
     private int[] samples;
     private boolean allSamples;
@@ -62,18 +61,16 @@ public class SampleIndexConsolidationDrive extends AbstractVariantsTableDriver {
     }
 
     @Override
-    protected Class<SampleIndexConsolidateMapper> getMapperClass() {
-        return SampleIndexConsolidateMapper.class;
+    protected Class<SampleIndexConsolidationMapper> getMapperClass() {
+        return SampleIndexConsolidationMapper.class;
     }
 
     @Override
     protected Job setupJob(Job job, String archiveTable, String variantTable) throws IOException {
-
-
         List<Scan> scans = new ArrayList<>();
 
         int caching = job.getConfiguration().getInt(HadoopVariantStorageEngine.MAPREDUCE_HBASE_SCAN_CACHING, 100);
-        logger.info("Scan set Caching to " + caching);
+        LOG.info("Scan set Caching to " + caching);
         Scan templateScan = new Scan();
         templateScan.setCaching(caching);        // 1 is the default in Scan
         templateScan.setCacheBlocks(false);  // don't set to true for MR jobs
@@ -90,7 +87,7 @@ public class SampleIndexConsolidationDrive extends AbstractVariantsTableDriver {
 
         for (int i = 0; i < scans.size(); i++) {
             Scan s = scans.get(i);
-            logger.info("scan[" + i + "]= " + s.toJSON());
+            LOG.info("scan[" + i + "]= " + s.toJSON());
         }
 
         // set other scan attrs
@@ -115,8 +112,8 @@ public class SampleIndexConsolidationDrive extends AbstractVariantsTableDriver {
             }
             if (!gts.isEmpty()) {
                 getStudyConfigurationManager().lockAndUpdate(getStudyId(), sc -> {
-                    gts.addAll(sc.getAttributes().getAsStringList(LOADED_GENOTYPES));
-                    sc.getAttributes().put(LOADED_GENOTYPES, gts);
+                    gts.addAll(sc.getAttributes().getAsStringList(VariantStorageEngine.Options.LOADED_GENOTYPES.key()));
+                    sc.getAttributes().put(VariantStorageEngine.Options.LOADED_GENOTYPES.key(), gts);
                     return sc;
                 });
             }
@@ -128,7 +125,7 @@ public class SampleIndexConsolidationDrive extends AbstractVariantsTableDriver {
         return "consolidate_sample_index";
     }
 
-    public static class SampleIndexConsolidateMapper extends TableMapper<ImmutableBytesWritable, Mutation> {
+    public static class SampleIndexConsolidationMapper extends TableMapper<ImmutableBytesWritable, Mutation> {
 
         private byte[] family;
 
@@ -204,6 +201,15 @@ public class SampleIndexConsolidationDrive extends AbstractVariantsTableDriver {
                 }
                 context.write(k, delete);
             }
+        }
+    }
+
+    public static void main(String[] args) {
+        try {
+            System.exit(new SampleIndexConsolidationDrive().privateMain(args));
+        } catch (Exception e) {
+            LOG.error("Error executing " + SampleIndexConsolidationDrive.class, e);
+            System.exit(1);
         }
     }
 }

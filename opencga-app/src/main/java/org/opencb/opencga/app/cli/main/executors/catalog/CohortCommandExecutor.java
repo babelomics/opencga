@@ -28,6 +28,7 @@ import org.opencb.opencga.app.cli.main.options.CohortCommandOptions;
 import org.opencb.opencga.app.cli.main.options.commons.AclCommandOptions;
 import org.opencb.opencga.catalog.db.api.CohortDBAdaptor;
 import org.opencb.opencga.catalog.exceptions.CatalogException;
+import org.opencb.opencga.catalog.utils.Constants;
 import org.opencb.opencga.core.models.Cohort;
 import org.opencb.opencga.core.models.Sample;
 import org.opencb.opencga.core.models.acls.permissions.CohortAclEntry;
@@ -78,6 +79,9 @@ public class CohortCommandExecutor extends OpencgaCommandExecutor {
                 break;
             case "group-by":
                 queryResponse = groupBy();
+                break;
+            case "stats":
+                queryResponse = stats();
                 break;
             case "acl":
                 queryResponse = aclCommandExecutor.acls(cohortsCommandOptions.aclsCommandOptions, openCGAClient.getCohortClient());
@@ -216,6 +220,30 @@ public class CohortCommandExecutor extends OpencgaCommandExecutor {
                 cohortsCommandOptions.groupByCommandOptions.fields,params);
     }
 
+    private QueryResponse stats() throws IOException {
+        logger.debug("Cohort stats");
+
+        CohortCommandOptions.StatsCommandOptions commandOptions = cohortsCommandOptions.statsCommandOptions;
+
+        Query query = new Query();
+        query.putIfNotEmpty("creationYear", commandOptions.creationYear);
+        query.putIfNotEmpty("creationMonth", commandOptions.creationMonth);
+        query.putIfNotEmpty("creationDay", commandOptions.creationDay);
+        query.putIfNotEmpty("creationDayOfWeek", commandOptions.creationDayOfWeek);
+        query.putIfNotEmpty("type", commandOptions.type);
+        query.putIfNotEmpty("status", commandOptions.status);
+        query.putIfNotEmpty("numSamples", commandOptions.numSamples);
+        query.putIfNotEmpty("release", commandOptions.release);
+        query.putIfNotEmpty(Constants.ANNOTATION, commandOptions.annotation);
+
+        QueryOptions options = new QueryOptions();
+        options.put("default", commandOptions.defaultStats);
+        options.putIfNotNull("field", commandOptions.field);
+        options.putIfNotNull("fieldRange", commandOptions.fieldRange);
+
+        return openCGAClient.getCohortClient().stats(commandOptions.study, query, options);
+    }
+
     private QueryResponse<CohortAclEntry> updateAcl() throws IOException, CatalogException {
         AclCommandOptions.AclsUpdateCommandOptions commandOptions = cohortsCommandOptions.aclsUpdateCommandOptions;
 
@@ -225,7 +253,7 @@ public class CohortCommandExecutor extends OpencgaCommandExecutor {
         ObjectMap bodyParams = new ObjectMap();
         bodyParams.putIfNotNull("permissions", commandOptions.permissions);
         bodyParams.putIfNotNull("action", commandOptions.action);
-        bodyParams.putIfNotNull("cohort", commandOptions.id);
+        bodyParams.putIfNotNull("cohort", extractIdsFromListOrFile(commandOptions.id));
 
         return openCGAClient.getCohortClient().updateAcl(commandOptions.memberId, queryParams, bodyParams);
     }

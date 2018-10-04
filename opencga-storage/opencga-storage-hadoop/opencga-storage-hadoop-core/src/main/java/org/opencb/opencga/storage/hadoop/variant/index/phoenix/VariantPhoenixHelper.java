@@ -73,7 +73,13 @@ public class VariantPhoenixHelper {
     public static final String HOM_REF = "0/0";
     public static final byte[] HOM_REF_BYTES = Bytes.toBytes(HOM_REF);
     private static final String STUDY_POP_FREQ_SEPARATOR = "_";
-    public static final List<Column> PRIMARY_KEY = Collections.unmodifiableList(Arrays.asList(CHROMOSOME, POSITION, REFERENCE, ALTERNATE));
+    public static final List<Column> PRIMARY_KEY = Collections.unmodifiableList(Arrays.asList(
+            CHROMOSOME,
+            POSITION,
+            REFERENCE,
+            ALTERNATE
+    ));
+
     public static final String FILL_MISSING_SUFIX = "_FM";
     public static final byte[] FILL_MISSING_SUFIX_BYTES = Bytes.toBytes(FILL_MISSING_SUFIX);
 
@@ -89,7 +95,14 @@ public class VariantPhoenixHelper {
         REFERENCE("REFERENCE", PVarchar.INSTANCE),
         ALTERNATE("ALTERNATE", PVarchar.INSTANCE),
 
+        CI_START_L("CI_START_L", PUnsignedInt.INSTANCE),
+        CI_START_R("CI_START_R", PUnsignedInt.INSTANCE),
+        CI_END_L("CI_END_L", PUnsignedInt.INSTANCE),
+        CI_END_R("CI_END_R", PUnsignedInt.INSTANCE),
+
         TYPE("TYPE", PVarchar.INSTANCE),
+
+        ANNOTATION_ID(ANNOTATION_PREFIX + "ID", PInteger.INSTANCE),
 
         SO(ANNOTATION_PREFIX + "SO", PIntegerArray.INSTANCE),
         GENES(ANNOTATION_PREFIX + "GENES", PVarcharArray.INSTANCE),
@@ -120,7 +133,11 @@ public class VariantPhoenixHelper {
         CADD_SCALED(FUNCTIONAL_SCORE_PREFIX + "CADD_SC", PFloat.INSTANCE),
         CADD_RAW(FUNCTIONAL_SCORE_PREFIX + "CADD_R", PFloat.INSTANCE),
 
-        FULL_ANNOTATION(ANNOTATION_PREFIX + "FULL", PVarchar.INSTANCE);
+        FULL_ANNOTATION(ANNOTATION_PREFIX + "FULL", PVarchar.INSTANCE),
+
+        INDEX_NOT_SYNC("_IDX_N", PBoolean.INSTANCE),
+        INDEX_UNKNOWN("_IDX_U", PBoolean.INSTANCE),
+        INDEX_STUDIES("_IDX_ST_", PIntegerArray.INSTANCE);
 
         private final String columnName;
         private final byte[] columnNameBytes;
@@ -382,10 +399,10 @@ public class VariantPhoenixHelper {
             switch (variantColumn) {
                 case CHROMOSOME:
                 case POSITION:
-                    sb.append(' ').append(variantColumn).append(' ').append(variantColumn.sqlType()).append(" NOT NULL , ");
+                    sb.append(" \"").append(variantColumn).append("\" ").append(variantColumn.sqlType()).append(" NOT NULL , ");
                     break;
                 default:
-                    sb.append(' ').append(variantColumn).append(' ').append(variantColumn.sqlType()).append(" , ");
+                    sb.append(" \"").append(variantColumn).append("\" ").append(variantColumn.sqlType()).append(" , ");
                     break;
             }
         }

@@ -164,8 +164,8 @@ public abstract class VariantDBAdaptorTest extends VariantStorageBaseTest {
             if (params.getBoolean(VariantStorageEngine.Options.ANNOTATE.key())) {
                 for (int i = 0; i < 30  ; i++) {
                     allVariants = dbAdaptor.get(new Query(), new QueryOptions(QueryOptions.SORT, true));
-                    Long annotated = count(new Query(ANNOTATION_EXISTS.key(), true));
-                    Long all = count(new Query());
+                    Long annotated = dbAdaptor.count(new Query(ANNOTATION_EXISTS.key(), true)).first();
+                    Long all = dbAdaptor.count(new Query()).first();
 
                     System.out.println("count annotated = " + annotated);
                     System.out.println("count           = " + all);
@@ -1040,15 +1040,19 @@ public abstract class VariantDBAdaptorTest extends VariantStorageBaseTest {
             assertThat(queryResult, everyResult(allVariants, hasAnnotation(hasSift(anyOf(hasItem(m), isEmpty())))));
         }
 
-        Query query = new Query(ANNOT_POLYPHEN.key(), "sift>0.5");
-        thrown.expect(VariantQueryException.class);
-        query(query, null);
 //        for (Map.Entry<Double, Integer> entry : polyphen.entrySet()) {
 //            query = new Query(VariantDBAdaptor.VariantQueryParams.SIFT.key(), entry.getKey());
 //            queryResult = dbAdaptor.get(query, null);
 //            assertEquals(entry.getKey(), entry.getValue(), queryResult.getNumResults());
 //        }
 
+    }
+
+    @Test
+    public void testGetAllVariants_polyphenSiftMalformed() {
+        Query query = new Query(ANNOT_POLYPHEN.key(), "sift>0.5");
+        thrown.expect(VariantQueryException.class);
+        query(query, null);
     }
 
     @Test
@@ -1384,12 +1388,16 @@ public abstract class VariantDBAdaptorTest extends VariantStorageBaseTest {
         numResults = count(query);
         assertEquals(allVariants.getNumResults(), numResults);
 
-        query = new Query(STUDY.key(), NOT + studyConfiguration.getStudyId());
-        numResults = count(query);
-        assertEquals(0, numResults);
+    }
 
-        query = new Query(STUDY.key(), NOT + studyConfiguration.getStudyName());
-        numResults = count(query);
+    @Test
+    public void testGetAllVariants_Negatedstudies() {
+//        query = new Query(STUDY.key(), NOT + studyConfiguration.getStudyId());
+//        numResults = count(query);
+//        assertEquals(0, numResults);
+
+        Query query = new Query(STUDY.key(), NOT + studyConfiguration.getStudyName());
+        long numResults = count(query);
         assertEquals(0, numResults);
 
     }
@@ -1409,11 +1417,14 @@ public abstract class VariantDBAdaptorTest extends VariantStorageBaseTest {
         numResults = count(query);
         assertEquals(NUM_VARIANTS, numResults);
 
+    }
+
+    @Test
+    public void testGetAllVariants_fileNotFound() {
         VariantQueryException e = VariantQueryException.missingStudyForFile("-1", Collections.singletonList(studyConfiguration.getStudyName()));
         thrown.expectMessage(e.getMessage());
         thrown.expect(e.getClass());
-        query = new Query(FILE.key(), -1);
-        count(query);
+        count(new Query(FILE.key(), -1));
 //        assertEquals("There is no file with ID -1", 0, numResults);
     }
 
@@ -1680,6 +1691,8 @@ public abstract class VariantDBAdaptorTest extends VariantStorageBaseTest {
     @Test
     public void testGetAllVariants_samples_gt() {
         Query query = new Query(SAMPLE.key(), "NA19600").append(GENOTYPE.key(), "NA19685" + IS + homRef).append(INCLUDE_SAMPLE.key(), ALL);
+        thrown.expect(VariantQueryException.class);
+        thrown.expectMessage("Can not be used along with filter \"genotype\"");
         queryResult = query(query, new QueryOptions());
         assertThat(queryResult, everyResult(allVariants, withStudy(STUDY_NAME, allOf(
                 withSampleData("NA19600", "GT", containsString("1")),
@@ -1883,7 +1896,7 @@ public abstract class VariantDBAdaptorTest extends VariantStorageBaseTest {
         queryResult = query(new Query(MISSING_ALLELES.key(), STUDY_NAME + ":" + StudyEntry.DEFAULT_COHORT + ">4"), null);
         assertEquals(9, queryResult.getNumResults());
         queryResult.getResult().stream().map(variant -> variant.getStudiesMap().get(STUDY_NAME).getStats())
-                .forEach(map -> assertTrue(map.get(StudyEntry.DEFAULT_COHORT).getMissingAlleles() > 4));
+                .forEach(map -> assertTrue(map.get(StudyEntry.DEFAULT_COHORT).getMissingAlleleCount() > 4));
 
     }
 
@@ -1981,6 +1994,17 @@ public abstract class VariantDBAdaptorTest extends VariantStorageBaseTest {
     }
 
     @Test
+    public void testSummary() {
+        queryResult = query(new Query(), new QueryOptions(VariantField.SUMMARY, true).append(QueryOptions.LIMIT, 1000));
+        System.out.println("queryResult = " + ((VariantQueryResult) queryResult).getSource());
+        assertEquals(allVariants.getResult().size(), queryResult.getResult().size());
+        for (Variant variant : queryResult.getResult()) {
+            assertThat(variant.getStudies().get(0).getSamplesData(), is(Collections.emptyList()));
+            assertThat(variant.getStudies().get(0).getFiles(), is(Collections.emptyList()));
+        }
+    }
+
+    @Test
     public void testExcludeAnnotation() {
         queryResult = query(new Query(), new QueryOptions(QueryOptions.EXCLUDE, "annotation"));
         assertEquals(allVariants.getResult().size(), queryResult.getResult().size());
@@ -2011,7 +2035,7 @@ public abstract class VariantDBAdaptorTest extends VariantStorageBaseTest {
 
             expectedAnnotation.setXrefs(null);
             expectedAnnotation.setId(null);
-            assertEquals(expectedAnnotation, annotation);
+            assertEquals("\n" + expectedAnnotation + "\n" + annotation, expectedAnnotation, annotation);
         }
     }
 

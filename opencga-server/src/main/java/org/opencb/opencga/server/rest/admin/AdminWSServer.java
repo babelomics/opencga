@@ -1,15 +1,20 @@
 package org.opencb.opencga.server.rest.admin;
 
 import io.swagger.annotations.*;
+import org.apache.commons.lang3.StringUtils;
 import org.opencb.commons.datastore.core.ObjectMap;
+import org.opencb.commons.datastore.core.Query;
 import org.opencb.commons.datastore.core.QueryResult;
 import org.opencb.opencga.catalog.audit.AuditRecord;
 import org.opencb.opencga.catalog.db.api.MetaDBAdaptor;
 import org.opencb.opencga.catalog.exceptions.CatalogException;
+import org.opencb.opencga.catalog.managers.DiseasePanelManager;
+import org.opencb.opencga.catalog.utils.ParamUtils;
 import org.opencb.opencga.core.exception.VersionException;
 import org.opencb.opencga.core.models.Account;
 import org.opencb.opencga.core.models.Group;
 import org.opencb.opencga.core.models.User;
+import org.opencb.opencga.server.rest.DiseasePanelWSServer;
 import org.opencb.opencga.server.rest.OpenCGAWSServer;
 
 import javax.servlet.http.HttpServletRequest;
@@ -83,15 +88,15 @@ public class AdminWSServer extends OpenCGAWSServer {
     @POST
     @Path("/users/sync")
     @ApiOperation(value = "Synchronise groups of users with LDAP groups", response = Group.class,
-        notes = "Mandatory fields: <b>authOriginId</b>, <b>study</b>, <b>from</b> and <b>to</b><br>"
-                + "<ul>"
-                + "<li><b>authOriginId</b>: Authentication origin id defined in the main Catalog configuration.</li>"
-                + "<li><b>study</b>: Study [[user@]project:]study where the group of users will be synced with the LDAP group.</li>"
-                + "<li><b>from</b>: LDAP group to be synced with a catalog group.</li>"
-                + "<li><b>to</b>: Catalog group that will be synced with the LDAP group.</li>"
-                + "<li><b>force</b>: Boolean to force the synchronisation with already existing Catalog groups that are not yet "
-                +   "synchronised with any other group.</li>"
-                + "</ul>"
+            notes = "Mandatory fields: <b>authOriginId</b>, <b>study</b>, <b>from</b> and <b>to</b><br>"
+                    + "<ul>"
+                    + "<li><b>authOriginId</b>: Authentication origin id defined in the main Catalog configuration.</li>"
+                    + "<li><b>study</b>: Study [[user@]project:]study where the group of users will be synced with the LDAP group.</li>"
+                    + "<li><b>from</b>: LDAP group to be synced with a catalog group.</li>"
+                    + "<li><b>to</b>: Catalog group that will be synced with the LDAP group.</li>"
+                    + "<li><b>force</b>: Boolean to force the synchronisation with already existing Catalog groups that are not yet "
+                    + "synchronised with any other group.</li>"
+                    + "</ul>"
     )
     public Response ldapSync(@ApiParam(value = "JSON containing the parameters", required = true) LDAPSyncParams ldapParams) {
         try {
@@ -139,6 +144,65 @@ public class AdminWSServer extends OpenCGAWSServer {
 
     }
 
+    @POST
+    @Path("/catalog/indexStats")
+    @ApiOperation(value = "Sync Catalog into the Solr")
+    public Response syncSolr() {
+        try {
+            return createOkResponse(catalogManager.getStudyManager().indexCatalogIntoSolr(sessionId));
+        } catch (Exception e) {
+            return createErrorResponse(e);
+        }
+    }
+
+    @POST
+    @Path("/catalog/install")
+    @ApiOperation(value = "Install OpenCGA database", notes = "Creates and initialises the OpenCGA database <br>"
+            + "<ul>"
+            + "<il><b>secretKey</b>: Secret key needed to authenticate through OpenCGA (JWT)</il><br>"
+            + "<il><b>password</b>: Password that will be set to perform future administrative operations over OpenCGA</il><br>"
+            + "<ul>")
+    public Response install(
+            @ApiParam(value = "JSON containing the mandatory parameters", required = true) InstallParams installParams
+    ) {
+        try {
+            catalogManager.installCatalogDB(installParams.secretKey, installParams.password);
+            return createOkResponse(new QueryResult<>("install ok"));
+        } catch (Exception e) {
+            return createErrorResponse(e);
+        }
+    }
+
+
+    @POST
+    @Path("/catalog/diseasePanel")
+    @ApiOperation(value = "Handle global disease panels")
+    public Response diseasePanels(
+            @ApiParam(value = "Import panels from PanelApp (GEL)", defaultValue = "false") @QueryParam("panelApp") boolean importPanels,
+            @ApiParam(value = "Flag indicating to overwrite installed panels in case of an ID conflict", defaultValue = "false")
+                @QueryParam("overwrite") boolean overwrite,
+            @ApiParam(value = "Comma separated list of global panel ids to delete")
+                @QueryParam("delete") String panelsToDelete,
+            @ApiParam(value = "Disease panel parameters to be installed") DiseasePanelWSServer.PanelPOST panelPost) {
+        try {
+            if (importPanels) {
+                catalogManager.getDiseasePanelManager().importPanelApp(sessionId, overwrite);
+            } else if (StringUtils.isEmpty(panelsToDelete)) {
+                catalogManager.getDiseasePanelManager().create(panelPost.toPanel(), overwrite, sessionId);
+            } else {
+                String[] panelIds = panelsToDelete.split(",");
+                for (String panelId : panelIds) {
+                    catalogManager.getDiseasePanelManager().delete(panelId, sessionId);
+                }
+            }
+
+            return createOkResponse(catalogManager.getDiseasePanelManager().count(DiseasePanelManager.INSTALLATION_PANELS,
+                    new Query(), sessionId));
+        } catch (Exception e) {
+            return createErrorResponse(e);
+        }
+    }
+
     //    @GET
 //    @Path("/audit/stats")
 //    @ApiOperation(value = "Get some stats from the audit database")
@@ -172,7 +236,7 @@ public class AdminWSServer extends OpenCGAWSServer {
 
     //******************************** DATABASE **********************************//
 
-//    @DELETE
+    //    @DELETE
 //    @Path("/database/clean")
 //    @ApiOperation(value = "Clean database from removed entries", notes = "Completely remove all 'removed' entries from the database")
 //    public Response clean() {
@@ -185,9 +249,9 @@ public class AdminWSServer extends OpenCGAWSServer {
 //    public Response stats() {
 //        return createErrorResponse(new NotImplementedException());
 //    }
-//
+
     @POST
-    @Path("/database/jwt")
+    @Path("/catalog/jwt")
     @ApiOperation(value = "Change JWT secret key")
     public Response jwt(@ApiParam(value = "JSON containing the parameters", required = true) JWTParams jwtParams) {
         ObjectMap params = new ObjectMap();
@@ -222,6 +286,11 @@ public class AdminWSServer extends OpenCGAWSServer {
     }
 
     public static class JWTParams {
+        public String secretKey;
+    }
+
+    public static class InstallParams {
+        public String password;
         public String secretKey;
     }
 

@@ -18,6 +18,7 @@ package org.opencb.opencga.storage.core.manager.variant;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.StopWatch;
+import org.apache.solr.common.SolrException;
 import org.opencb.biodata.models.core.Region;
 import org.opencb.biodata.models.variant.Variant;
 import org.opencb.biodata.models.variant.avro.VariantAnnotation;
@@ -30,7 +31,7 @@ import org.opencb.commons.datastore.core.ObjectMap;
 import org.opencb.commons.datastore.core.Query;
 import org.opencb.commons.datastore.core.QueryOptions;
 import org.opencb.commons.datastore.core.QueryResult;
-import org.opencb.commons.datastore.core.result.FacetedQueryResult;
+import org.opencb.commons.datastore.core.result.FacetQueryResult;
 import org.opencb.opencga.catalog.db.api.SampleDBAdaptor;
 import org.opencb.opencga.catalog.exceptions.CatalogAuthorizationException;
 import org.opencb.opencga.catalog.exceptions.CatalogException;
@@ -43,7 +44,6 @@ import org.opencb.opencga.core.results.VariantQueryResult;
 import org.opencb.opencga.storage.core.StorageEngineFactory;
 import org.opencb.opencga.storage.core.StoragePipelineResult;
 import org.opencb.opencga.storage.core.exceptions.StorageEngineException;
-import org.opencb.opencga.storage.core.exceptions.VariantSearchException;
 import org.opencb.opencga.storage.core.manager.StorageManager;
 import org.opencb.opencga.storage.core.manager.models.StudyInfo;
 import org.opencb.opencga.storage.core.manager.variant.metadata.CatalogVariantMetadataFactory;
@@ -181,23 +181,36 @@ public class VariantStorageManager extends StorageManager {
         return indexOperation.index(studyInfo, outDir, options, sessionId);
     }
 
-    public void searchIndexSamples(String study, List<String> samples, String sessionId)
-            throws StorageEngineException, IOException, VariantSearchException,
+    public void searchIndexSamples(String study, List<String> samples, QueryOptions queryOptions, String sessionId)
+            throws StorageEngineException, IOException, SolrException,
             IllegalAccessException, ClassNotFoundException, InstantiationException, CatalogException {
         DataStore dataStore = getDataStore(study, sessionId);
         VariantStorageEngine variantStorageEngine =
                 storageEngineFactory.getVariantStorageEngine(dataStore.getStorageEngine(), dataStore.getDbName());
+        variantStorageEngine.getOptions().putAll(queryOptions);
 
         variantStorageEngine.searchIndexSamples(study, samples);
     }
 
-    public void searchIndex(String study, String sessionId) throws StorageEngineException, IOException, VariantSearchException,
-            IllegalAccessException, ClassNotFoundException, InstantiationException, CatalogException {
-        searchIndex(new Query(STUDY.key(), study), new QueryOptions(), sessionId);
+    public void removeSearchIndexSamples(String study, List<String> samples, QueryOptions queryOptions, String sessionId)
+            throws CatalogException, IllegalAccessException, InstantiationException, ClassNotFoundException,
+            StorageEngineException, SolrException {
+        DataStore dataStore = getDataStore(study, sessionId);
+        VariantStorageEngine variantStorageEngine =
+                storageEngineFactory.getVariantStorageEngine(dataStore.getStorageEngine(), dataStore.getDbName());
+        variantStorageEngine.getOptions().putAll(queryOptions);
+
+        variantStorageEngine.removeSearchIndexSamples(study, samples);
+
     }
 
-    public void searchIndex(Query query, QueryOptions queryOptions, String sessionId) throws StorageEngineException,
-            IOException, VariantSearchException, IllegalAccessException, InstantiationException, ClassNotFoundException, CatalogException {
+    public void searchIndex(String study, String sessionId) throws StorageEngineException, IOException, SolrException,
+            IllegalAccessException, ClassNotFoundException, InstantiationException, CatalogException {
+        searchIndex(new Query(STUDY.key(), study), new QueryOptions(), false, sessionId);
+    }
+
+    public void searchIndex(Query query, QueryOptions queryOptions, boolean overwrite, String sessionId) throws StorageEngineException,
+            IOException, SolrException, IllegalAccessException, InstantiationException, ClassNotFoundException, CatalogException {
 //        String userId = catalogManager.getUserManager().getUserId(sessionId);
 //        long studyId = catalogManager.getStudyManager().getId(userId, study);
         String study = catalogUtils.getAnyStudy(query, sessionId);
@@ -205,7 +218,7 @@ public class VariantStorageManager extends StorageManager {
         VariantStorageEngine variantStorageEngine =
                 storageEngineFactory.getVariantStorageEngine(dataStore.getStorageEngine(), dataStore.getDbName());
         catalogUtils.parseQuery(query, sessionId);
-        variantStorageEngine.searchIndex(query, queryOptions);
+        variantStorageEngine.searchIndex(query, queryOptions, overwrite);
     }
 
     public void removeStudy(String study, String sessionId, QueryOptions options)
@@ -595,6 +608,19 @@ public class VariantStorageManager extends StorageManager {
         if (queryOptions.containsKey(VariantCatalogQueryUtils.PROJECT.key())) {
             query.put(VariantCatalogQueryUtils.PROJECT.key(), queryOptions.get(VariantCatalogQueryUtils.PROJECT.key()));
         }
+        if (queryOptions.containsKey(VariantCatalogQueryUtils.FAMILY.key())) {
+            query.put(VariantCatalogQueryUtils.FAMILY.key(), queryOptions.get(VariantCatalogQueryUtils.FAMILY.key()));
+        }
+        if (queryOptions.containsKey(VariantCatalogQueryUtils.FAMILY_PHENOTYPE.key())) {
+            query.put(VariantCatalogQueryUtils.FAMILY_PHENOTYPE.key(), queryOptions.get(VariantCatalogQueryUtils.FAMILY_PHENOTYPE.key()));
+        }
+        if (queryOptions.containsKey(VariantCatalogQueryUtils.MODE_OF_INHERITANCE.key())) {
+            query.put(VariantCatalogQueryUtils.MODE_OF_INHERITANCE.key(),
+                    queryOptions.get(VariantCatalogQueryUtils.MODE_OF_INHERITANCE.key()));
+        }
+        if (queryOptions.containsKey(VariantCatalogQueryUtils.PANEL.key())) {
+            query.put(VariantCatalogQueryUtils.PANEL.key(), queryOptions.get(VariantCatalogQueryUtils.PANEL.key()));
+        }
 
         return query;
     }
@@ -608,12 +634,12 @@ public class VariantStorageManager extends StorageManager {
     //   Facet methods      //
     // ---------------------//
 
-    public FacetedQueryResult facet(Query query, QueryOptions queryOptions, String sessionId)
+    public FacetQueryResult facet(Query query, QueryOptions queryOptions, String sessionId)
             throws CatalogException, StorageEngineException, IOException {
         return secure(query, queryOptions, sessionId, dbAdaptor -> {
             addDefaultLimit(queryOptions);
             logger.debug("getFacets {}, {}", query, queryOptions);
-            FacetedQueryResult result = dbAdaptor.facet(query, queryOptions);
+            FacetQueryResult result = dbAdaptor.facet(query, queryOptions);
             logger.debug("getFacets in {}ms", result.getDbTime());
             return result;
         });

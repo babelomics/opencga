@@ -17,6 +17,7 @@
 package org.opencb.opencga.app.cli.main.executors.catalog;
 
 
+import org.opencb.biodata.models.pedigree.IndividualProperty;
 import org.opencb.commons.datastore.core.ObjectMap;
 import org.opencb.commons.datastore.core.Query;
 import org.opencb.commons.datastore.core.QueryOptions;
@@ -28,6 +29,7 @@ import org.opencb.opencga.app.cli.main.options.IndividualCommandOptions;
 import org.opencb.opencga.catalog.db.api.IndividualDBAdaptor;
 import org.opencb.opencga.catalog.db.api.SampleDBAdaptor;
 import org.opencb.opencga.catalog.exceptions.CatalogException;
+import org.opencb.opencga.catalog.utils.Constants;
 import org.opencb.opencga.core.models.Individual;
 import org.opencb.opencga.core.models.Sample;
 import org.opencb.opencga.core.models.acls.permissions.IndividualAclEntry;
@@ -76,6 +78,9 @@ public class IndividualCommandExecutor extends OpencgaCommandExecutor {
             case "group-by":
                 queryResponse = groupBy();
                 break;
+            case "stats":
+                queryResponse = stats();
+                break;
             case "samples":
                 queryResponse = getSamples();
                 break;
@@ -123,7 +128,7 @@ public class IndividualCommandExecutor extends OpencgaCommandExecutor {
         String sex = individualsCommandOptions.createCommandOptions.sex;
         if (individualsCommandOptions.createCommandOptions.sex != null) {
             try {
-                params.put(IndividualDBAdaptor.QueryParams.SEX.key(), Individual.Sex.valueOf(sex));
+                params.put(IndividualDBAdaptor.QueryParams.SEX.key(), IndividualProperty.Sex.valueOf(sex));
             } catch (IllegalArgumentException e) {
                 logger.error("{} not recognized as a proper individual sex", sex);
                 return null;
@@ -220,7 +225,7 @@ public class IndividualCommandExecutor extends OpencgaCommandExecutor {
         String sex = individualsCommandOptions.updateCommandOptions.sex;
         if (individualsCommandOptions.updateCommandOptions.sex != null) {
             try {
-                params.put(IndividualDBAdaptor.QueryParams.SEX.key(), Individual.Sex.valueOf(sex));
+                params.put(IndividualDBAdaptor.QueryParams.SEX.key(), IndividualProperty.Sex.valueOf(sex));
             } catch (IllegalArgumentException e) {
                 logger.error("{} not recognized as a proper individual sex", sex);
                 return null;
@@ -314,10 +319,46 @@ public class IndividualCommandExecutor extends OpencgaCommandExecutor {
         bodyParams.putIfNotNull("permissions", commandOptions.permissions);
         bodyParams.putIfNotNull("action", commandOptions.action);
         bodyParams.putIfNotNull("propagate", commandOptions.propagate);
-        bodyParams.putIfNotNull("individual", commandOptions.id);
-        bodyParams.putIfNotNull("sample", commandOptions.sample);
+        bodyParams.putIfNotNull("individual", extractIdsFromListOrFile(commandOptions.id));
+        bodyParams.putIfNotNull("sample", extractIdsFromListOrFile(commandOptions.sample));
 
         return openCGAClient.getIndividualClient().updateAcl(commandOptions.memberId, queryParams, bodyParams);
+    }
+
+    private QueryResponse stats() throws IOException {
+        logger.debug("Individual stats");
+
+        IndividualCommandOptions.StatsCommandOptions commandOptions = individualsCommandOptions.statsCommandOptions;
+
+        Query query = new Query();
+        query.putIfNotEmpty("creationYear", commandOptions.creationYear);
+        query.putIfNotEmpty("creationMonth", commandOptions.creationMonth);
+        query.putIfNotEmpty("creationDay", commandOptions.creationDay);
+        query.putIfNotEmpty("creationDayOfWeek", commandOptions.creationDayOfWeek);
+        query.putIfNotEmpty("status", commandOptions.status);
+        query.putIfNotEmpty("lifeStatus", commandOptions.lifeStatus);
+        query.putIfNotEmpty("affectationStatus", commandOptions.affectationStatus);
+        query.putIfNotEmpty("numSamples", commandOptions.numSamples);
+        query.putIfNotEmpty("numMultiples", commandOptions.numMultiples);
+        query.putIfNotEmpty("multiplesType", commandOptions.multiplesType);
+        query.putIfNotEmpty("sex", commandOptions.sex);
+        query.putIfNotEmpty("karyotypicSex", commandOptions.karyotypicSex);
+        query.putIfNotEmpty("ethnicity", commandOptions.ethnicity);
+        query.putIfNotEmpty("population", commandOptions.population);
+        query.putIfNotEmpty("phenotypes", commandOptions.phenotypes);
+        query.putIfNotEmpty("release", commandOptions.release);
+        query.putIfNotEmpty("version", commandOptions.version);
+        query.putIfNotNull("hasFather", commandOptions.hasFather);
+        query.putIfNotNull("hasMother", commandOptions.hasMother);
+        query.putIfNotNull("parentalConsanguinity", commandOptions.parentalConsanguinity);
+        query.putIfNotEmpty(Constants.ANNOTATION, commandOptions.annotation);
+
+        QueryOptions options = new QueryOptions();
+        options.put("default", commandOptions.defaultStats);
+        options.putIfNotNull("field", commandOptions.field);
+        options.putIfNotNull("fieldRange", commandOptions.fieldRange);
+
+        return openCGAClient.getIndividualClient().stats(commandOptions.study, query, options);
     }
 
 }

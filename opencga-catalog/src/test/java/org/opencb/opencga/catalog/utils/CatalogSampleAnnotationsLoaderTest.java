@@ -53,11 +53,10 @@ public class CatalogSampleAnnotationsLoaderTest extends GenericTest {
     public static void beforeClass() throws IOException, CatalogException, URISyntaxException {
         Configuration configuration = Configuration.load(CatalogSampleAnnotationsLoaderTest.class.getClassLoader()
                 .getClass().getResource("/configuration-test.yml").openStream());
-        configuration.getAdmin().setSecretKey("dummy");
         configuration.getAdmin().setAlgorithm("HS256");
         catalogManager = new CatalogManager(configuration);
         catalogManager.deleteCatalogDB(true);
-        catalogManager.installCatalogDB();
+        catalogManager.installCatalogDB("dummy", "admin");
         loader = new CatalogSampleAnnotationsLoader(catalogManager);
 
         String pedFileName = "20130606_g1k.ped";
@@ -142,7 +141,7 @@ public class CatalogSampleAnnotationsLoaderTest extends GenericTest {
     private void validate(Pedigree pedigree, VariableSet variableSet) throws CatalogException {
         for (Map.Entry<String, Individual> entry : pedigree.getIndividuals().entrySet()) {
             Map<String, Object> annotation = loader.getAnnotation(entry.getValue(), null, variableSet, pedigree.getFields());
-            CatalogAnnotationsValidator.checkAnnotationSet(variableSet, new AnnotationSet("", variableSet.getId(), annotation, "", 1,
+            AnnotationUtils.checkAnnotationSet(variableSet, new AnnotationSet("", variableSet.getId(), annotation, "", 1,
                     null), null, true);
         }
     }

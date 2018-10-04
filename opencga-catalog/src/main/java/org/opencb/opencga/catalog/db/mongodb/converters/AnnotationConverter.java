@@ -34,7 +34,7 @@ public class AnnotationConverter {
     }
 
 
-    public List<Document>   annotationToDB(VariableSet variableSet, AnnotationSet annotationSet) {
+    public List<Document> annotationToDB(VariableSet variableSet, AnnotationSet annotationSet) {
         return annotationToDB(variableSet, annotationSet.getId(), annotationSet.getAnnotations());
     }
 
@@ -481,8 +481,10 @@ public class AnnotationConverter {
 
         // We check the annotation
         String annotation = Constants.ANNOTATION + "." + document.getString(AnnotationMongoDBAdaptor.AnnotationSetParams.ID.key());
-        if (projection.contains(annotation)) {
-            return passProjectionFilter;
+        for (String projectionString : projection) {
+            if (annotation.startsWith(projectionString)) {
+                return passProjectionFilter;
+            }
         }
 
         // We check the annotation set name

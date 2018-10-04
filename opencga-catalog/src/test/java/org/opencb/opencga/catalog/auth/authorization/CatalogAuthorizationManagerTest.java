@@ -121,12 +121,11 @@ public class CatalogAuthorizationManagerTest extends GenericTest {
     public void before() throws Exception {
         Configuration configuration = Configuration.load(getClass().getResource("/configuration-test.yml")
                 .openStream());
-        configuration.getAdmin().setSecretKey("dummy");
         configuration.getAdmin().setAlgorithm("HS256");
         CatalogManagerExternalResource.clearCatalog(configuration);
 
         catalogManager = new CatalogManager(configuration);
-        catalogManager.installCatalogDB();
+        catalogManager.installCatalogDB("dummy", "admin");
         fileManager = catalogManager.getFileManager();
 
         catalogManager.getUserManager().create(ownerUser, ownerUser, "email@ccc.ccc", password, "ASDF", null, Account.FULL, null, null);
@@ -143,7 +142,8 @@ public class CatalogAuthorizationManagerTest extends GenericTest {
 
         p1 = catalogManager.getProjectManager().create("p1", "p1", null, null, "Homo sapiens",
                 null, null, "GRCh38", new QueryOptions(), ownerSessionId).first().getId();
-        Study study = catalogManager.getStudyManager().create(p1, "studyFqn", "studyFqn", "studyFqn", Study.Type.CASE_CONTROL, null, null, null, null, null, null, null, null, null, null, ownerSessionId).first();
+        Study study = catalogManager.getStudyManager().create(p1, "studyFqn", "studyFqn", "studyFqn", Study.Type.CASE_CONTROL, null, null,
+                null, null, null, null, null, null, null, null, ownerSessionId).first();
         studyFqn = study.getFqn();
         studyUid = study.getUid();
         data_d1 = catalogManager.getFileManager().createFolder(studyFqn, Paths.get("data/d1/").toString(), null, true, null,

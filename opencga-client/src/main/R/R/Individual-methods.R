@@ -16,56 +16,62 @@
 #' \url{http://bioinfo.hpc.cam.ac.uk/opencga/webservices/}
 #' @export
 
-setMethod("individualClient", "OpencgaR", function(OpencgaR, individual, action, params=NULL) {
+setMethod("individualClient", "OpencgaR", function(OpencgaR, individual, action, params=NULL, ...) {
     category <- "individuals"
     switch(action,
-           annotationsets=fetchOpenCGA(object=OpencgaR, category=category, 
-                                       categoryId=individual, action="annotationsets", 
-                                       params=params, httpMethod="GET"),
-           groupBy=fetchOpenCGA(object=OpencgaR, category=category, action="groupBy", 
-                                params=params, httpMethod="GET"),
-           search=fetchOpenCGA(object=OpencgaR, category=category, action="search", 
-                               params=params, httpMethod="GET"),
+           search=fetchOpenCGA(object=OpencgaR, category=category, action=action, 
+                               params=params, httpMethod="GET", ...),
+           stats=fetchOpenCGA(object=OpencgaR, category=category, action=action, 
+                               params=params, httpMethod="GET", ...),
            acl=fetchOpenCGA(object=OpencgaR, category=category, categoryId=individual, 
-                            action="acl", params=params, httpMethod="GET"),
-           delete=fetchOpenCGA(object=OpencgaR, category=category, categoryId=individual, 
-                               action="delete", params=params, httpMethod="GET"),
+                            action=action, params=params, httpMethod="GET", ...),
            info=fetchOpenCGA(object=OpencgaR, category=category, categoryId=individual, 
-                             action="info", params=params, httpMethod="GET"),
-           create=fetchOpenCGA(object=OpencgaR, category=category,  
-                               action="create", params=params, httpMethod="POST"),
+                             action=action, params=params, httpMethod="GET", ...),
+           create=fetchOpenCGA(object=OpencgaR, category=category,
+                               action=action, params=params, httpMethod="POST", ...),
            update=fetchOpenCGA(object=OpencgaR, category=category, categoryId=individual, 
-                               action="update", params=params, httpMethod="POST")
+                               action=action, params=params, 
+                               as.queryParam=c("samplesAction", "annotationSetsAction", "incVersion", "updateSampleVersion", "include", "exclude"), 
+                               httpMethod="POST", ...)
+           # annotationsets=fetchOpenCGA(object=OpencgaR, category=category, 
+           #                             categoryId=individual, action="annotationsets", 
+           #                             params=params, httpMethod="GET", ...),
+           # groupBy=fetchOpenCGA(object=OpencgaR, category=category, action="groupBy", 
+           #                      params=params, httpMethod="GET", ...),
+           # delete=fetchOpenCGA(object=OpencgaR, category=category, categoryId=individual, 
+           #                     action="delete", params=params, httpMethod="GET", ...),
     )
 })
 
 #' @export
 setMethod("individualAnnotationsetClient", "OpencgaR", function(OpencgaR, individual, 
-                                                             annotationsetName, action, 
-                                                             params=NULL) {
+                                                             annotationSet, action, 
+                                                             params=NULL, ...) {
     category <- "individuals"
     switch(action,
-           search=fetchOpenCGA(object=OpencgaR, category=category, categoryId=individual, 
-                               subcategory="annotationsets", action="search", 
-                               params=params, httpMethod="GET"),
-           delete=fetchOpenCGA(object=OpencgaR, category=category, categoryId=individual, 
-                               subcategory="annotationsets", subcategoryId=annotationsetName, 
-                               action="delete", params=params, httpMethod="GET"),
-           create=fetchOpenCGA(object=OpencgaR, category=category, categoryId=individual, 
-                               subcategory="annotationsets", action="create", 
-                               params=params, httpMethod="POST", as.queryParam="variableSet"),
            update=fetchOpenCGA(object=OpencgaR, category=category, categoryId=individual, 
-                               subcategory="annotationsets", subcategoryId=annotationsetName, 
-                               action="update", params=params, httpMethod="POST")
+                               subcategory="annotationsets", subcategoryId=annotationSet, 
+                               action="annotations/update", params=params, 
+                               as.queryParam=c("action", "incVersion", "updateSampleVersion"), 
+                               httpMethod="POST", ...)
+           # search=fetchOpenCGA(object=OpencgaR, category=category, categoryId=individual, 
+           #                     subcategory="annotationsets", action="search", 
+           #                     params=params, httpMethod="GET", ...),
+           # delete=fetchOpenCGA(object=OpencgaR, category=category, categoryId=individual, 
+           #                     subcategory="annotationsets", subcategoryId=annotationsetName, 
+           #                     action="delete", params=params, httpMethod="GET", ...),
+           # create=fetchOpenCGA(object=OpencgaR, category=category, categoryId=individual, 
+           #                     subcategory="annotationsets", action="create", 
+           #                     params=params, httpMethod="POST", as.queryParam="variableSet", ...),
     )
 })
 
 #' @export
-setMethod("individualAclClient", "OpencgaR", function(OpencgaR, memberIds, action, params=NULL) {
+setMethod("individualAclClient", "OpencgaR", function(OpencgaR, memberIds, action, params=NULL, ...) {
     category <- "individuals"
     switch(action,
            update=fetchOpenCGA(object=OpencgaR, category=category, subcategory="acl", 
                                subcategoryId=memberIds, action="update", params=params, 
-                               httpMethod="POST")
+                               httpMethod="POST", ...)
     )
 })

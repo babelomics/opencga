@@ -16,6 +16,8 @@
 
 package org.opencb.opencga.catalog.managers;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.Before;
 import org.junit.Test;
 import org.opencb.commons.datastore.core.ObjectMap;
@@ -31,8 +33,8 @@ import org.opencb.opencga.catalog.exceptions.*;
 import org.opencb.opencga.catalog.io.CatalogIOManager;
 import org.opencb.opencga.catalog.utils.Constants;
 import org.opencb.opencga.core.common.TimeUtils;
-import org.opencb.opencga.core.models.File;
 import org.opencb.opencga.core.models.*;
+import org.opencb.opencga.core.models.File;
 import org.opencb.opencga.core.models.acls.AclParams;
 import org.opencb.opencga.core.models.acls.permissions.FileAclEntry;
 
@@ -51,6 +53,7 @@ import java.util.stream.Collectors;
 
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.junit.Assert.*;
+import static org.opencb.opencga.core.common.JacksonUtils.getDefaultObjectMapper;
 
 /**
  * Created by pfurio on 24/08/16.
@@ -436,6 +439,37 @@ public class FileManagerTest extends AbstractManagerTest {
     }
 
     @Test
+    public void testAnnotations() throws CatalogException, JsonProcessingException {
+        List<Variable> variables = new ArrayList<>();
+        variables.add(new Variable("var_name", "", "", Variable.VariableType.TEXT, "", true, false, Collections.emptyList(), 0, "", "",
+                null, Collections.emptyMap()));
+        variables.add(new Variable("AGE", "", "", Variable.VariableType.INTEGER, "", false, false, Collections.emptyList(), 0, "", "",
+                null, Collections.emptyMap()));
+        variables.add(new Variable("HEIGHT", "", "", Variable.VariableType.DOUBLE, "", false, false, Collections.emptyList(), 0, "",
+                "", null, Collections.emptyMap()));
+        VariableSet vs1 = catalogManager.getStudyManager().createVariableSet(studyFqn, "vs1", "vs1", false, false, "", null, variables,
+                sessionIdUser).first();
+
+        ObjectMap annotations = new ObjectMap()
+                .append("var_name", "Joe")
+                .append("AGE", 25)
+                .append("HEIGHT", 180);
+        AnnotationSet annotationSet = new AnnotationSet("annotation1", vs1.getId(), annotations);
+        AnnotationSet annotationSet1 = new AnnotationSet("annotation2", vs1.getId(), annotations);
+
+        ObjectMapper jsonObjectMapper = getDefaultObjectMapper();
+        ObjectMap updateAnnotation = new ObjectMap()
+                // Update the annotation values
+                .append(FileDBAdaptor.QueryParams.ANNOTATION_SETS.key(), Arrays.asList(
+                        new ObjectMap(jsonObjectMapper.writeValueAsString(annotationSet)),
+                        new ObjectMap(jsonObjectMapper.writeValueAsString(annotationSet1))
+                ));
+        QueryResult<File> update = catalogManager.getFileManager().update(studyFqn, "data/", updateAnnotation, QueryOptions.empty(),
+                sessionIdUser);
+        assertEquals(2, update.first().getAnnotationSets().size());
+    }
+
+    @Test
     public void testCreateAndUpload() throws Exception {
         FileUtils catalogFileUtils = new FileUtils(catalogManager);
 
@@ -675,6 +709,10 @@ public class FileManagerTest extends AbstractManagerTest {
         QueryResult<File> result;
 
         query = new Query(FileDBAdaptor.QueryParams.NAME.key(), "~data");
+        result = catalogManager.getFileManager().get(studyFqn, query, null, sessionIdUser);
+        assertEquals(1, result.getNumResults());
+
+        query = new Query(FileDBAdaptor.QueryParams.NAME.key(), "~txt.gz$");
         result = catalogManager.getFileManager().get(studyFqn, query, null, sessionIdUser);
         assertEquals(1, result.getNumResults());
 
@@ -991,10 +1029,15 @@ public class FileManagerTest extends AbstractManagerTest {
                 Arrays.asList(sample1.getId(), sample2.getId())), QueryOptions.empty(), sessionIdUser);
 
         // Fetch the file
-        fileQueryResult = catalogManager.getFileManager().get(studyFqn, "data/test/", QueryOptions.empty(),
+        fileQueryResult = catalogManager.getFileManager().get(studyFqn, "data/test/", new QueryOptions(
+                QueryOptions.INCLUDE, Arrays.asList(FileDBAdaptor.QueryParams.ID.key(), FileDBAdaptor.QueryParams.SAMPLE_UIDS.key())),
                 sessionIdUser);
         assertEquals(1, fileQueryResult.getNumResults());
         assertEquals(2, fileQueryResult.first().getSamples().size());
+        for (Sample sample : fileQueryResult.first().getSamples()) {
+            assertTrue(sample.getUid() > 0);
+            assertTrue(org.apache.commons.lang3.StringUtils.isEmpty(sample.getId()));
+        }
 
         // Update the version of one of the samples
         catalogManager.getSampleManager().update(studyFqn, sample1.getId(), new ObjectMap(),

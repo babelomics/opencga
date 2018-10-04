@@ -16,7 +16,9 @@
 
 package org.opencb.opencga.catalog.db.mongodb;
 
-import com.fasterxml.jackson.databind.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
+import com.fasterxml.jackson.databind.ObjectWriter;
 import com.mongodb.BasicDBObject;
 import com.mongodb.DBObject;
 import com.mongodb.ErrorCategory;
@@ -44,6 +46,7 @@ import java.util.stream.Collectors;
 
 import static org.opencb.opencga.catalog.db.mongodb.MongoDBAdaptor.PRIVATE_ID;
 import static org.opencb.opencga.catalog.db.mongodb.MongoDBAdaptor.PRIVATE_UID;
+import static org.opencb.opencga.core.common.JacksonUtils.getDefaultObjectMapper;
 
 /**
  * Created by imedina on 21/11/14.
@@ -51,24 +54,6 @@ import static org.opencb.opencga.catalog.db.mongodb.MongoDBAdaptor.PRIVATE_UID;
 class MongoDBUtils {
 
     // Special queryOptions keys
-    /**
-     * SKIP_CHECK is used when deleting a document. If SKIP_CHECK is set to false, the document will be deleted no matter if other
-     * documents might depend on that one.
-     * @deprecated Use {@link DBAdaptor#SKIP_CHECK}
-     */
-    @Deprecated
-    public static final String SKIP_CHECK = DBAdaptor.SKIP_CHECK;
-    /**
-     * @deprecated Use {@link DBAdaptor#FORCE} instead.
-     */
-    @Deprecated
-    public static final String FORCE = DBAdaptor.FORCE;
-    /**
-     * KEEP_OUTPUT_FILES is used when deleting/removing a job. If it is set to true, it will mean that the output files that have been
-     * generated with the job going to be deleted/removed will be kept. Otherwise, those files will be also deleted/removed.
-     */
-    public static final String KEEP_OUTPUT_FILES = "keepOutputFiles";
-
     public static final Set<String> DATASTORE_OPTIONS = Arrays.asList("include", "exclude", "sort", "limit", "skip").stream()
             .collect(Collectors.toSet());
     public static final Set<String> OTHER_OPTIONS = Arrays.asList("of", "sid", "sessionId", "metadata", "includeProjects",
@@ -83,12 +68,7 @@ class MongoDBUtils {
     private static Map<Class, ObjectReader> jsonReaderMap;
 
     static {
-        jsonObjectMapper = new ObjectMapper();
-        jsonObjectMapper.configure(DeserializationFeature.FAIL_ON_IGNORED_PROPERTIES, false);
-        jsonObjectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        jsonObjectMapper.configure(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES, false);
-        jsonObjectMapper.configure(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY, true);
-        jsonObjectMapper.configure(MapperFeature.REQUIRE_SETTERS_FOR_GETTERS, true);
+        jsonObjectMapper = getDefaultObjectMapper();
         jsonObjectWriter = jsonObjectMapper.writer();
         jsonReaderMap = new HashMap<>();
     }
@@ -250,7 +230,8 @@ class MongoDBUtils {
      * Filter "include" and "exclude" options.
      * <p>
      * Include and Exclude options are as absolute routes. This method removes all the values that are not in the
-     * specified route. For the values in the route, the route is removed.
+     * specified route. For the values in the route, the route is removed. Also, if there are additional options such as INCLUDE_ACLS,
+     * it will add the proper field to the include filter.
      * <p>
      * [
      * name,
@@ -294,6 +275,9 @@ class MongoDBUtils {
                 }
                 if (listName.equals("include")) {
                     filteredList.add(PRIVATE_UID);
+                    if (options.getBoolean(DBAdaptor.INCLUDE_ACLS)) {
+                        filteredList.add(AuthorizationMongoDBAdaptor.QueryParams.ACL.key());
+                    }
                 } else if (listName.equals("exclude")) {
                     filteredList.remove(PRIVATE_UID);
                 }

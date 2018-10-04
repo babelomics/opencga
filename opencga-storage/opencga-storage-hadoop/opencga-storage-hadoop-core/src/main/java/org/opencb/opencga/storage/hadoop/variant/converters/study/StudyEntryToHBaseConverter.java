@@ -34,6 +34,8 @@ import org.opencb.opencga.storage.hadoop.variant.index.phoenix.VariantPhoenixKey
 
 import java.util.*;
 
+import static org.opencb.opencga.storage.hadoop.variant.converters.study.HBaseToStudyEntryConverter.ALTERNATE_COORDINATE_SEPARATOR;
+
 
 /**
  * Created on 25/05/17.
@@ -56,11 +58,19 @@ public class StudyEntryToHBaseConverter extends AbstractPhoenixConverter impleme
 
     public StudyEntryToHBaseConverter(byte[] columnFamily, StudyConfiguration studyConfiguration, boolean addSecondaryAlternates,
                                       Integer release) {
-        this(columnFamily, studyConfiguration, addSecondaryAlternates, new HashSet<>(Arrays.asList("0/0", "0|0")), release);
+        this(columnFamily, studyConfiguration, addSecondaryAlternates, release, false);
     }
 
-    public StudyEntryToHBaseConverter(byte[] columnFamily, StudyConfiguration studyConfiguration,
-                                      boolean addSecondaryAlternates, Set<String> defaultGenotypes, Integer release) {
+    public StudyEntryToHBaseConverter(byte[] columnFamily, StudyConfiguration studyConfiguration, boolean addSecondaryAlternates,
+                                      Integer release, boolean includeReferenceVariantsData) {
+        this(columnFamily, studyConfiguration, addSecondaryAlternates,
+                release, includeReferenceVariantsData
+                        ? Collections.emptySet()
+                        : new HashSet<>(Arrays.asList("0/0", "0|0")));
+    }
+
+    private StudyEntryToHBaseConverter(byte[] columnFamily, StudyConfiguration studyConfiguration,
+                                       boolean addSecondaryAlternates, Integer release, Set<String> defaultGenotypes) {
         super(columnFamily);
         this.studyConfiguration = studyConfiguration;
         studyColumn = VariantPhoenixHelper.getStudyColumn(studyConfiguration.getStudyId());
@@ -92,12 +102,32 @@ public class StudyEntryToHBaseConverter extends AbstractPhoenixConverter impleme
         byte[] rowKey = VariantPhoenixKeyFactory.generateVariantRowKey(variant);
         Put put = new Put(rowKey);
         add(put, VariantPhoenixHelper.VariantColumn.TYPE, variant.getType().toString());
+        if (variant.getSv() != null) {
+            if (variant.getSv().getCiStartLeft() != null) {
+                add(put, VariantPhoenixHelper.VariantColumn.CI_START_L, variant.getSv().getCiStartLeft());
+            }
+            if (variant.getSv().getCiStartRight() != null) {
+                add(put, VariantPhoenixHelper.VariantColumn.CI_START_R, variant.getSv().getCiStartRight());
+            }
+            if (variant.getSv().getCiEndLeft() != null) {
+                add(put, VariantPhoenixHelper.VariantColumn.CI_END_L, variant.getSv().getCiEndLeft());
+            }
+            if (variant.getSv().getCiEndRight() != null) {
+                add(put, VariantPhoenixHelper.VariantColumn.CI_END_R, variant.getSv().getCiEndRight());
+            }
+        }
         add(put, studyColumn, 0);
         if (releaseColumn != null) {
             add(put, releaseColumn, true);
         }
+        int size = put.size();
+        put = convert(variant, put, null);
 
-        return convert(variant, put, null);
+        if (size == put.size()) {
+            return null;
+        } else {
+            return put;
+        }
     }
 
     public Put convert(Variant variant, Put put) {
@@ -183,15 +213,15 @@ public class StudyEntryToHBaseConverter extends AbstractPhoenixConverter impleme
         while (iterator.hasNext()) {
             AlternateCoordinate alt = iterator.next();
             sb.append(alt.getChromosome() == null ? variant.getChromosome() : alt.getChromosome());
-            sb.append(':');
+            sb.append(ALTERNATE_COORDINATE_SEPARATOR);
             sb.append(alt.getStart() == null ? variant.getStart() : alt.getStart());
-            sb.append(':');
+            sb.append(ALTERNATE_COORDINATE_SEPARATOR);
             sb.append(alt.getEnd() == null ? variant.getEnd() : alt.getEnd());
-            sb.append(':');
+            sb.append(ALTERNATE_COORDINATE_SEPARATOR);
             sb.append(alt.getReference() == null ? variant.getReference() : alt.getReference());
-            sb.append(':');
+            sb.append(ALTERNATE_COORDINATE_SEPARATOR);
             sb.append(alt.getAlternate() == null ? variant.getAlternate() : alt.getAlternate());
-            sb.append(':');
+            sb.append(ALTERNATE_COORDINATE_SEPARATOR);
             sb.append(alt.getType() == null ? variant.getType() : alt.getType());
 
             if (iterator.hasNext()) {

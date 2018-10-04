@@ -2,6 +2,7 @@ package org.opencb.opencga.storage.core.variant.annotation;
 
 import org.junit.Test;
 import org.opencb.biodata.models.variant.Variant;
+import org.opencb.biodata.models.variant.avro.AdditionalAttribute;
 import org.opencb.biodata.models.variant.avro.ConsequenceType;
 import org.opencb.biodata.models.variant.avro.VariantAnnotation;
 import org.opencb.commons.datastore.core.ObjectMap;
@@ -23,6 +24,8 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static org.junit.Assert.*;
+import static org.opencb.opencga.storage.core.variant.adaptors.VariantField.AdditionalAttributes.GROUP_NAME;
+import static org.opencb.opencga.storage.core.variant.adaptors.VariantField.AdditionalAttributes.VARIANT_ID;
 import static org.opencb.opencga.storage.core.variant.annotation.VariantAnnotationManager.*;
 
 /**
@@ -104,12 +107,13 @@ public abstract class VariantAnnotationManagerTest extends VariantStorageBaseTes
         variantStorageEngine.saveAnnotation("v1", new ObjectMap());
         variantStorageEngine.annotate(new Query(), new ObjectMap(TestAnnotator.ANNOT_KEY, "v2").append(OVERWRITE_ANNOTATIONS, true));
         variantStorageEngine.saveAnnotation("v2", new ObjectMap());
-        variantStorageEngine.annotate(new Query(), new ObjectMap(TestAnnotator.ANNOT_KEY, "v3").append(OVERWRITE_ANNOTATIONS, true));
+        variantStorageEngine.annotate(new Query(VariantQueryParam.REGION.key(), "1"), new ObjectMap(TestAnnotator.ANNOT_KEY, "v3").append(OVERWRITE_ANNOTATIONS, true));
 
         assertEquals(0, variantStorageEngine.getAnnotation("v0", null, null).getResult().size());
         checkAnnotationSnapshot(variantStorageEngine, "v1", "v1");
         checkAnnotationSnapshot(variantStorageEngine, "v2", "v2");
-        checkAnnotationSnapshot(variantStorageEngine, VariantAnnotationManager.CURRENT, "v3");
+        checkAnnotationSnapshot(variantStorageEngine, VariantAnnotationManager.CURRENT, VariantAnnotationManager.CURRENT, "v3", new Query(VariantQueryParam.REGION.key(), "1"));
+        checkAnnotationSnapshot(variantStorageEngine, VariantAnnotationManager.CURRENT, "v2", "v2", new Query(VariantQueryParam.REGION.key(), "2"));
 
         variantStorageEngine.deleteAnnotation("v1", new ObjectMap());
 
@@ -148,14 +152,20 @@ public abstract class VariantAnnotationManagerTest extends VariantStorageBaseTes
         assertEquals(0, variantStorageEngine.getAnnotation("v1", null, null).getResult().size());
     }
 
-    public void checkAnnotationSnapshot(VariantStorageEngine variantStorageEngine, String name, String expectedId) throws Exception {
+    public void checkAnnotationSnapshot(VariantStorageEngine variantStorageEngine, String annotationName, String expectedId) throws Exception {
+        checkAnnotationSnapshot(variantStorageEngine, annotationName, annotationName, expectedId, null);
+    }
+
+    public void checkAnnotationSnapshot(VariantStorageEngine variantStorageEngine, String annotationName, String expectedAnnotationName, String expectedId, Query query) throws Exception {
         int count = 0;
-        for (VariantAnnotation annotation: variantStorageEngine.getAnnotation(name, null, null).getResult()) {
-            assertEquals(expectedId, annotation.getId());
-            assertEquals("1", annotation.getAdditionalAttributes().get("opencga").getAttribute().get("release"));
+        for (VariantAnnotation annotation: variantStorageEngine.getAnnotation(annotationName, query, null).getResult()) {
+            assertEquals("an id -- " + expectedId, annotation.getId());
+//            assertEquals("1", annotation.getAdditionalAttributes().get("opencga").getAttribute().get("release"));
+            assertEquals(expectedAnnotationName, annotation.getAdditionalAttributes().get(GROUP_NAME.key())
+                    .getAttribute().get(VariantField.AdditionalAttributes.ANNOTATION_ID.key()));
             count++;
         }
-        assertEquals(count, variantStorageEngine.count(new Query()).first().intValue());
+        assertEquals(count, variantStorageEngine.count(query).first().intValue());
     }
 
     public static class TestAnnotator extends VariantAnnotator {
@@ -183,13 +193,16 @@ public abstract class VariantAnnotationManagerTest extends VariantStorageBaseTes
                 a.setEnd(v.getEnd());
                 a.setReference(v.getReference());
                 a.setAlternate(v.getAlternate());
-                a.setId(key);
+                a.setId("an id -- " + key);
                 ConsequenceType ct = new ConsequenceType();
                 ct.setGeneName("a gene");
                 ct.setSequenceOntologyTerms(Collections.emptyList());
                 ct.setExonOverlap(Collections.emptyList());
                 ct.setTranscriptAnnotationFlags(Collections.emptyList());
                 a.setConsequenceTypes(Collections.singletonList(ct));
+                a.setAdditionalAttributes(
+                        Collections.singletonMap(GROUP_NAME.key(),
+                                new AdditionalAttribute(Collections.singletonMap(VARIANT_ID.key(), v.toString()))));
                 return a;
             }).collect(Collectors.toList());
         }

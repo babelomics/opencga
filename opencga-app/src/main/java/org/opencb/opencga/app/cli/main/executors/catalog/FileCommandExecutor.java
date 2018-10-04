@@ -25,11 +25,11 @@ import org.opencb.opencga.app.cli.main.options.FileCommandOptions;
 import org.opencb.opencga.catalog.db.api.FileDBAdaptor;
 import org.opencb.opencga.catalog.exceptions.CatalogException;
 import org.opencb.opencga.catalog.managers.CatalogManager;
+import org.opencb.opencga.catalog.utils.Constants;
+import org.opencb.opencga.core.common.UriUtils;
 import org.opencb.opencga.core.models.File;
 import org.opencb.opencga.core.models.FileTree;
-import org.opencb.opencga.core.models.Study;
 import org.opencb.opencga.core.models.acls.permissions.FileAclEntry;
-import org.opencb.opencga.core.common.UriUtils;
 
 import java.io.IOException;
 import java.net.URI;
@@ -88,6 +88,9 @@ public class FileCommandExecutor extends OpencgaCommandExecutor {
 //                break;
             case "content":
                 queryResponse = content();
+                break;
+            case "stats":
+                queryResponse = stats();
                 break;
 //            case "fetch":
 //                queryResponse = fetch();
@@ -439,10 +442,42 @@ public class FileCommandExecutor extends OpencgaCommandExecutor {
         ObjectMap bodyParams = new ObjectMap();
         bodyParams.putIfNotNull("permissions", commandOptions.permissions);
         bodyParams.putIfNotNull("action", commandOptions.action);
-        bodyParams.putIfNotNull("file", commandOptions.id);
-        bodyParams.putIfNotNull("sample", commandOptions.sample);
+        bodyParams.putIfNotNull("file", extractIdsFromListOrFile(commandOptions.id));
+        bodyParams.putIfNotNull("sample", extractIdsFromListOrFile(commandOptions.sample));
 
         return openCGAClient.getFileClient().updateAcl(commandOptions.memberId, queryParams, bodyParams);
+    }
+
+    private QueryResponse stats() throws IOException {
+        logger.debug("File stats");
+
+        FileCommandOptions.StatsCommandOptions commandOptions = filesCommandOptions.statsCommandOptions;
+
+        Query query = new Query();
+        query.putIfNotEmpty("creationYear", commandOptions.creationYear);
+        query.putIfNotEmpty("creationMonth", commandOptions.creationMonth);
+        query.putIfNotEmpty("creationDay", commandOptions.creationDay);
+        query.putIfNotEmpty("creationDayOfWeek", commandOptions.creationDayOfWeek);
+        query.putIfNotEmpty("name", commandOptions.name);
+        query.putIfNotEmpty("type", commandOptions.type);
+        query.putIfNotEmpty("format", commandOptions.format);
+        query.putIfNotEmpty("bioformat", commandOptions.bioformat);
+        query.putIfNotEmpty("status", commandOptions.status);
+        query.putIfNotEmpty("numSamples", commandOptions.numSamples);
+        query.putIfNotEmpty("numRelatedFiles", commandOptions.numRelatedFiles);
+        query.putIfNotEmpty("release", commandOptions.release);
+        query.putIfNotEmpty("size", commandOptions.size);
+        query.putIfNotEmpty("software", commandOptions.software);
+        query.putIfNotEmpty("experiment", commandOptions.experiment);
+        query.putIfNotNull("external", commandOptions.external);
+        query.putIfNotEmpty(Constants.ANNOTATION, commandOptions.annotation);
+
+        QueryOptions options = new QueryOptions();
+        options.put("default", commandOptions.defaultStats);
+        options.putIfNotNull("field", commandOptions.field);
+        options.putIfNotNull("fieldRange", commandOptions.fieldRange);
+
+        return openCGAClient.getFileClient().stats(commandOptions.study, query, options);
     }
 
 }

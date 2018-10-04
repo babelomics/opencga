@@ -41,6 +41,7 @@ public interface ClinicalAnalysisDBAdaptor extends DBAdaptor<ClinicalAnalysis> {
         UUID("uuid", TEXT, ""),
         DESCRIPTION("description", TEXT, ""),
         CREATION_DATE("creationDate", DATE, ""),
+        MODIFICATION_DATE("modificationDate", DATE, ""),
         TYPE("type", TEXT, ""),
         ATTRIBUTES("attributes", TEXT, ""), // "Format: <key><operation><stringValue> where <operation> is [<|<=|>|>=|==|!=|~|!~]"
         NATTRIBUTES("nattributes", DECIMAL, ""), // "Format: <key><operation><numericalValue> where <operation> is [<|<=|>|>=|==|!=|~|!~]"
@@ -57,9 +58,9 @@ public interface ClinicalAnalysisDBAdaptor extends DBAdaptor<ClinicalAnalysis> {
         SOMATIC_UID("somatic.uid", INTEGER, ""),
         GERMLINE("germline", TEXT_ARRAY, ""),
         GERMLINE_UID("germline.uid", INTEGER, ""),
-        SUBJECTS("subjects", TEXT_ARRAY, ""),
-        SUBJECT_UID("subjects.uid", INTEGER, ""),
-        SAMPLE_UID("subjects.samples.uid", INTEGER, ""),
+        PROBAND("proband", TEXT_ARRAY, ""),
+        PROBAND_UID("proband.uid", INTEGER, ""),
+        SAMPLE_UID("proband.samples.uid", INTEGER, ""),
         INTERPRETATIONS("interpretations", TEXT_ARRAY, ""),
         INTERPRETATIONS_ID("interpretations.id", TEXT_ARRAY, ""),
 

@@ -19,11 +19,13 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 
+import static java.util.Arrays.asList;
 import static org.hamcrest.CoreMatchers.*;
 import static org.junit.Assert.*;
 import static org.opencb.biodata.models.variant.StudyEntry.FILTER;
 import static org.opencb.biodata.models.variant.StudyEntry.QUAL;
 import static org.opencb.opencga.storage.core.variant.adaptors.VariantMatchers.*;
+import static org.opencb.opencga.storage.core.variant.adaptors.VariantQueryParam.*;
 import static org.opencb.opencga.storage.core.variant.adaptors.VariantQueryUtils.*;
 
 /**
@@ -34,6 +36,16 @@ import static org.opencb.opencga.storage.core.variant.adaptors.VariantQueryUtils
 @Ignore
 public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTest {
 
+    protected static final String file12877 = "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz";
+    protected static final String file12878 = "1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz";
+    protected static final String file12882 = "1K.end.platinum-genomes-vcf-NA12882_S1.genome.vcf.gz";
+    protected static final String file12879 = "1K.end.platinum-genomes-vcf-NA12879_S1.genome.vcf.gz";
+    protected static final String file12880 = "1K.end.platinum-genomes-vcf-NA12880_S1.genome.vcf.gz";
+    protected static final String sampleNA12877 = "NA12877";
+    protected static final String sampleNA12878 = "NA12878";
+    protected static final String sampleNA12882 = "NA12882";
+    protected static final String sampleNA12879 = "NA12879";
+    protected static final String sampleNA12880 = "NA12880";
     protected static boolean loaded = false;
     protected VariantDBAdaptor dbAdaptor;
     protected Query query;
@@ -128,6 +140,7 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
             Integer minFileId = variant.getStudies().stream()
                     .flatMap(s -> s.getFiles().stream())
                     .map(FileEntry::getFileId)
+                    .map(s -> s.substring(30, 35))
                     .map(Integer::valueOf)
                     .min(Integer::compareTo)
                     .orElse(0);
@@ -151,7 +164,7 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
     public void testIncludeFiles() throws Exception {
         query = new Query()
                 .append(VariantQueryParam.INCLUDE_STUDY.key(), "S_1")
-                .append(VariantQueryParam.INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz");
+                .append(VariantQueryParam.INCLUDE_FILE.key(), file12877);
         queryResult = query(query, options);
         assertEquals(dbAdaptor.count(null).first().intValue(), queryResult.getNumResults());
         for (Variant variant : queryResult.getResult()) {
@@ -160,7 +173,7 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
             if (s_1 != null) {
                 assertTrue(s_1.getFiles().size() <= 1);
                 if (s_1.getFiles().size() == 1) {
-                    assertNotNull(s_1.getFile("12877"));
+                    assertNotNull(s_1.getFile(file12877));
                 }
             }
             assertTrue(variant.getStudies().size() <= 1);
@@ -197,8 +210,40 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
         VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
                 .append(VariantQueryParam.INCLUDE_STUDY.key(), "S_1")
                 .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877")
-                .append(VariantQueryParam.INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz"), options);
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(withFileId("12877"), withSampleData("NA12877", "GT", containsString("1"))))));
+                .append(VariantQueryParam.INCLUDE_FILE.key(), file12877), options);
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(withFileId(file12877), withSampleData("NA12877", "GT", containsString("1"))))));
+    }
+
+    @Test
+    public void testGetBySampleNamesOR() throws Exception {
+        query = new Query()
+                .append(VariantQueryParam.STUDY.key(), "S_1")
+                .append(VariantQueryParam.SAMPLE.key(), "NA12877,NA12878");
+        queryResult = query(query, options);
+        VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
+                .append(VariantQueryParam.INCLUDE_STUDY.key(), "S_1")
+                .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877,NA12878")
+                .append(VariantQueryParam.INCLUDE_FILE.key(), file12877 + "," + file12878), options);
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", anyOf(
+                allOf(withFileId(file12877), withSampleData("NA12877", "GT", containsString("1"))),
+                allOf(withFileId(file12878), withSampleData("NA12878", "GT", containsString("1")))
+        ))));
+    }
+
+    @Test
+    public void testGetBySampleNamesAND() throws Exception {
+        query = new Query()
+                .append(VariantQueryParam.STUDY.key(), "S_1")
+                .append(VariantQueryParam.SAMPLE.key(), "NA12877;NA12878");
+        queryResult = query(query, options);
+        VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
+                .append(VariantQueryParam.INCLUDE_STUDY.key(), "S_1")
+                .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877,NA12878")
+                .append(VariantQueryParam.INCLUDE_FILE.key(), file12877 + "," + file12878), options);
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(
+                withFileId(file12877), withSampleData("NA12877", "GT", containsString("1")),
+                withFileId(file12878), withSampleData("NA12878", "GT", containsString("1"))
+        ))));
     }
 
     @Test
@@ -206,38 +251,38 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
         VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
                 .append(VariantQueryParam.INCLUDE_STUDY.key(), "S_1")
                 .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877")
-                .append(VariantQueryParam.INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz"), options);
+                .append(VariantQueryParam.INCLUDE_FILE.key(), file12877), options);
 
         query = new Query()
                 .append(VariantQueryParam.STUDY.key(), "S_1")
                 .append(VariantQueryParam.GENOTYPE.key(), "NA12877:" + GenotypeClass.HOM_ALT);
         queryResult = query(query, options);
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(withFileId("12877"), withSampleData("NA12877", "GT", anyOf(is("1/1"), is("2/2")))))));
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(withFileId(file12877), withSampleData("NA12877", "GT", anyOf(is("1/1"), is("2/2")))))));
 
         query = new Query()
                 .append(VariantQueryParam.STUDY.key(), "S_1")
                 .append(VariantQueryParam.GENOTYPE.key(), "NA12877:" + GenotypeClass.HET_REF);
         queryResult = query(query, options);
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(withFileId("12877"), withSampleData("NA12877", "GT", anyOf(is("0/1"), is("0/2")))))));
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(withFileId(file12877), withSampleData("NA12877", "GT", anyOf(is("0/1"), is("0/2")))))));
 
         query = new Query()
                 .append(VariantQueryParam.STUDY.key(), "S_1")
                 .append(VariantQueryParam.GENOTYPE.key(), "NA12877:" + GenotypeClass.HET_ALT);
         queryResult = query(query, options);
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(withFileId("12877"), withSampleData("NA12877", "GT", anyOf(is("1/2"), is("2/3")))))));
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(withFileId(file12877), withSampleData("NA12877", "GT", anyOf(is("1/2"), is("2/3")))))));
     }
 
     @Test
     public void testGetByFileName() throws Exception {
         query = new Query()
 //                .append(VariantQueryParam.STUDY.key(), "S_1")
-                .append(VariantQueryParam.FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz");
+                .append(VariantQueryParam.FILE.key(), file12877);
         queryResult = query(query, options);
         VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
                 .append(VariantQueryParam.INCLUDE_STUDY.key(), "all")
                 .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877")
-                .append(VariantQueryParam.INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz"), options);
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId("12877"))));
+                .append(VariantQueryParam.INCLUDE_FILE.key(), file12877), options);
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId(file12877))));
     }
 
     @Test
@@ -245,15 +290,15 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
         query = new Query()
                 .append(VariantQueryParam.STUDY.key(), "S_1")
                 .append(VariantQueryParam.FILE.key(),
-                        "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz"
+                        file12877
                                 + VariantQueryUtils.OR +
-                                "1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz");
+                                file12878);
         queryResult = query(query, options);
         VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
                 .append(VariantQueryParam.INCLUDE_STUDY.key(), "S_1")
                 .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877,NA12878")
-                .append(VariantQueryParam.INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz,1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz"), options);
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", anyOf(withFileId("12877"), withFileId("12878")))));
+                .append(VariantQueryParam.INCLUDE_FILE.key(), file12877+","+file12878), options);
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", anyOf(withFileId(file12877), withFileId(file12878)))));
     }
 
     @Test
@@ -261,15 +306,15 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
         query = new Query()
                 .append(VariantQueryParam.STUDY.key(), "S_1")
                 .append(VariantQueryParam.FILE.key(),
-                        "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz"
+                        file12877
                                 + AND +
-                                "1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz");
+                                file12878);
         queryResult = query(query, options);
         VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
                 .append(VariantQueryParam.INCLUDE_STUDY.key(), "S_1")
                 .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877,NA12878")
-                .append(VariantQueryParam.INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz,1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz"), options);
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(withFileId("12877"), withFileId("12878")))));
+                .append(VariantQueryParam.INCLUDE_FILE.key(), asList(file12877 , file12878)), options);
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(withFileId(file12877), withFileId(file12878)))));
     }
 
     @Test
@@ -277,18 +322,18 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
         query = new Query()
                 .append(VariantQueryParam.STUDY.key(), "S_1")
                 .append(VariantQueryParam.FILE.key(),
-                        "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz"
+                        file12877
                                 + AND + NOT +
-                                "1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz")
+                                file12878)
                 .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877,NA12878")
-                .append(VariantQueryParam.INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz");
+                .append(VariantQueryParam.INCLUDE_FILE.key(), file12877);
         queryResult = query(query, options);
         VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
                 .append(VariantQueryParam.INCLUDE_STUDY.key(), "S_1")
                 .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877,NA12878")
                 // Return file NA12878 to determine which variants must be discarded
-                .append(VariantQueryParam.INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz,1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz"), options);
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(withFileId("12877"), not(withFileId("12878"))))));
+                .append(VariantQueryParam.INCLUDE_FILE.key(), asList(file12877 , file12878)), options);
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(withFileId(file12877), not(withFileId(file12878))))));
     }
 
     @Test
@@ -296,15 +341,210 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
         query = new Query()
                 .append(VariantQueryParam.STUDY.key(), "S_1,S_2")
                 .append(VariantQueryParam.FILE.key(),
-                        "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz"
+                        file12877
                                 + AND +
-                                "1K.end.platinum-genomes-vcf-NA12882_S1.genome.vcf.gz");
+                                file12882);
         queryResult = query(query, options);
         VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
                 .append(VariantQueryParam.INCLUDE_STUDY.key(), "S_1,S_2")
                 .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877,NA12882")
-                .append(VariantQueryParam.INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz,1K.end.platinum-genomes-vcf-NA12882_S1.genome.vcf.gz"), options);
-        assertThat(queryResult, everyResult(allVariants, allOf(withStudy("S_1", withFileId("12877")), withStudy("S_2", withFileId("12882")))));
+                .append(VariantQueryParam.INCLUDE_FILE.key(), asList(file12877 , file12882)), options);
+        assertThat(queryResult, everyResult(allVariants, allOf(withStudy("S_1", withFileId(file12877)), withStudy("S_2", withFileId(file12882)))));
+    }
+
+    @Test
+    public void testGetAllVariants_format() {
+        VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
+                .append(VariantQueryParam.INCLUDE_STUDY.key(), "S_1")
+                .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877,NA12878")
+                .append(VariantQueryParam.INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz,1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz"), options);
+
+        Query query = new Query(STUDY.key(), "S_1")
+                .append(SAMPLE.key(), "NA12877,NA12878")
+                .append(FORMAT.key(), "NA12877:DP<100");
+        queryResult = query(query, new QueryOptions());
+        System.out.println("queryResult.getNumResults() = " + queryResult.getNumResults());
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(
+                withSamples("NA12877", "NA12878"),
+                anyOf(
+                        withSampleData("NA12877", "GT", containsString("1")),
+                        withSampleData("NA12878", "GT", containsString("1"))
+                ),
+                withSampleData("NA12877", "DP", asNumber(lt(100)))
+
+        ))));
+
+        query = new Query(STUDY.key(), "S_1")
+                .append(INCLUDE_SAMPLE.key(), "NA12877,NA12878")
+                .append(FORMAT.key(), "NA12877:DP<100;GT=1/1");
+        queryResult = query(query, new QueryOptions());
+        System.out.println("queryResult.getNumResults() = " + queryResult.getNumResults());
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(
+                withSamples("NA12877", "NA12878"),
+                withSampleData("NA12877", "GT", is("1/1")),
+                withSampleData("NA12877", "DP", asNumber(lt(100)))
+
+        ))));
+
+        query = new Query(STUDY.key(), "S_1")
+                .append(INCLUDE_SAMPLE.key(), "NA12877,NA12878")
+                .append(FORMAT.key(), "NA12877:DP<100;GT=1/1,0/1");
+        queryResult = query(query, new QueryOptions());
+        System.out.println("queryResult.getNumResults() = " + queryResult.getNumResults());
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(
+                withSamples("NA12877", "NA12878"),
+                withSampleData("NA12877", "GT", anyOf(is("1/1"), is("0/1"))),
+                withSampleData("NA12877", "DP", asNumber(lt(100)))
+
+        ))));
+
+        query = new Query(STUDY.key(), "S_1")
+                .append(FORMAT.key(), "NA12877:DP<100" + OR + "NA12878:DP<50");
+        queryResult = query(query, new QueryOptions());
+        System.out.println("queryResult.getNumResults() = " + queryResult.getNumResults());
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(
+                withSamples("NA12877", "NA12878"),
+                anyOf(
+                        withSampleData("NA12877", "DP", asNumber(lt(100))),
+                        withSampleData("NA12878", "DP", asNumber(lt(50)))
+                )
+        ))));
+
+        query = new Query(STUDY.key(), "S_1")
+                .append(FORMAT.key(), "NA12877:DP<100" + AND + "NA12878:DP<50");
+        queryResult = query(query, new QueryOptions());
+        System.out.println("queryResult.getNumResults() = " + queryResult.getNumResults());
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(
+                withSamples("NA12877", "NA12878"),
+                allOf(
+                        withSampleData("NA12877", "DP", asNumber(lt(100))),
+                        withSampleData("NA12878", "DP", asNumber(lt(50)))
+                )
+        ))));
+
+    }
+
+
+    @Test
+    public void testGetAllVariants_formatFail() {
+        thrown.expect(VariantQueryException.class);
+        thrown.expectMessage("FORMAT field \"JJ\" not found.");
+        Query query = new Query(STUDY.key(), "S_1").append(FORMAT.key(), "NA12877:JJ<100");
+        queryResult = query(query, new QueryOptions());
+    }
+
+    @Test
+    public void testGetAllVariants_Info() {
+        VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
+                .append(VariantQueryParam.INCLUDE_STUDY.key(), "S_1")
+                .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877,NA12878")
+                .append(VariantQueryParam.INCLUDE_FILE.key(), file12877 + "," + file12878), options);
+
+
+        Query query = new Query(STUDY.key(), "S_1")
+//                .append(INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz,1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz")
+                .append(INFO.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz:HaplotypeScore<10"
+                        + ",1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz:DP>100");
+        queryResult = query(query, new QueryOptions());
+        System.out.println("queryResult.getNumResults() = " + queryResult.getNumResults());
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(
+                anyOf(
+                        withFileId(file12877,
+                                withAttribute("HaplotypeScore", asNumber(lt(10)))
+                        ),
+                        withFileId(file12878,
+                                withAttribute("DP", asNumber(gt(100)))
+                        )
+                )
+        ))));
+
+        query = new Query(STUDY.key(), "S_1")
+//                .append(FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz,1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz")
+                .append(INFO.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz:HaplotypeScore<10"
+                        + ",1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz:DP>100");
+        queryResult = query(query, new QueryOptions());
+        System.out.println("queryResult.getNumResults() = " + queryResult.getNumResults());
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(
+                anyOf(
+                        withFileId(file12877,
+                                withAttribute("HaplotypeScore", asNumber(lt(10)))
+                        ),
+                        withFileId(file12878,
+                                withAttribute("DP", asNumber(gt(100)))
+                        )
+                )
+        ))));
+    }
+
+    @Test
+    public void testGetAllVariants_mixInfoFileOperators() {
+        VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
+                .append(VariantQueryParam.INCLUDE_STUDY.key(), "S_1")
+                .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877,NA12878")
+                .append(VariantQueryParam.INCLUDE_FILE.key(), file12877 + "," + file12878), options);
+
+
+        thrown.expect(VariantQueryException.class);
+        thrown.expectMessage(VariantQueryException.mixedAndOrOperators(FILE, INFO).getMessage());
+
+        query = new Query(STUDY.key(), "S_1")
+                .append(FILE.key(), file12877 + OR + file12878)
+                .append(INFO.key(),
+                        "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz:HaplotypeScore<10"
+                                + AND
+                                + "1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz:DP>100");
+        queryResult = query(query, new QueryOptions());
+        System.out.println("queryResult.getNumResults() = " + queryResult.getNumResults());
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(
+                withFileId(file12877,
+                        withAttribute("HaplotypeScore", asNumber(lt(10)))
+                ),
+                withFileId(file12878,
+                        withAttribute("DP", asNumber(gt(100)))
+                )
+        ))));
+
+    }
+
+    @Test
+    public void testGetAllVariants_mixInfoFileOperators2() {
+        VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
+                .append(VariantQueryParam.INCLUDE_STUDY.key(), "S_1")
+                .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877,NA12878")
+                .append(VariantQueryParam.INCLUDE_FILE.key(), file12877 + "," + file12878), options);
+
+        thrown.expect(VariantQueryException.class);
+        thrown.expectMessage(VariantQueryException.mixedAndOrOperators(FILE, INFO).getMessage());
+
+        query = new Query(STUDY.key(), "S_1")
+                .append(FILE.key(), file12877 + AND + file12878)
+                .append(INFO.key(),
+                        "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz:HaplotypeScore<10"
+                                + OR
+                                + "1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz:DP>100");
+        queryResult = query(query, new QueryOptions());
+        System.out.println("queryResult.getNumResults() = " + queryResult.getNumResults());
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(
+                withFileId(file12877),
+                withFileId(file12878),
+                anyOf(
+                        withFileId(file12877,
+                                withAttribute("HaplotypeScore", asNumber(lt(10)))
+                        ),
+                        withFileId(file12878,
+                                withAttribute("DP", asNumber(gt(100)))
+                        )
+                )
+        ))));
+
+    }
+
+    @Test
+    public void testGetAllVariants_infoFail() {
+        thrown.expect(VariantQueryException.class);
+        thrown.expectMessage("INFO field \"JJ\" not found.");
+        Query query = new Query(STUDY.key(), "S_1").append(INFO.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz:JJ<100");
+        queryResult = query(query, new QueryOptions());
     }
 
     @Test
@@ -312,57 +552,59 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
         query = new Query()
                 .append(VariantQueryParam.STUDY.key(), "S_1,S_2")
                 .append(VariantQueryParam.FILE.key(),
-                        "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz"
+                        file12877
                                 + VariantQueryUtils.OR +
-                                "1K.end.platinum-genomes-vcf-NA12882_S1.genome.vcf.gz");
+                                file12882);
         queryResult = query(query, options);
         VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
                 .append(VariantQueryParam.INCLUDE_STUDY.key(), "S_1,S_2")
                 .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877,NA12882")
-                .append(VariantQueryParam.INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz,1K.end.platinum-genomes-vcf-NA12882_S1.genome.vcf.gz"), options);
-        assertThat(queryResult, everyResult(allVariants, anyOf(withStudy("S_1", withFileId("12877")), withStudy("S_2", withFileId("12882")))));
+                .append(VariantQueryParam.INCLUDE_FILE.key(), asList(file12877 , file12882)), options);
+        assertThat(queryResult, everyResult(allVariants, anyOf(withStudy("S_1", withFileId(file12877)), withStudy("S_2", withFileId(file12882)))));
     }
 
     @Test
     public void testGetByFileNamesMultiStudiesImplicitAnd() {
         query = new Query()
                 .append(VariantQueryParam.FILE.key(),
-                        "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz"
+                        file12877
                                 + AND +
-                                "1K.end.platinum-genomes-vcf-NA12882_S1.genome.vcf.gz");
+                                file12882);
         queryResult = query(query, options);
         VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
                 .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877,NA12882")
-                .append(VariantQueryParam.INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz,1K.end.platinum-genomes-vcf-NA12882_S1.genome.vcf.gz"), options);
-        assertThat(queryResult, everyResult(allVariants, allOf(withStudy("S_1", withFileId("12877")), withStudy("S_2", withFileId("12882")))));
+                .append(VariantQueryParam.INCLUDE_FILE.key(), asList(file12877 , file12882)), options);
+        assertThat(queryResult, everyResult(allVariants, allOf(withStudy("S_1", withFileId(file12877)), withStudy("S_2", withFileId(file12882)))));
     }
 
     @Test
     public void testGetByFileNamesMultiStudiesImplicitOr() {
         query = new Query()
                 .append(VariantQueryParam.FILE.key(),
-                        "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz"
+                        file12877
                                 + OR +
-                                "1K.end.platinum-genomes-vcf-NA12882_S1.genome.vcf.gz");
+                                file12882);
         queryResult = query(query, options);
         VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
                 .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877,NA12882")
-                .append(VariantQueryParam.INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz,1K.end.platinum-genomes-vcf-NA12882_S1.genome.vcf.gz"), options);
-        assertThat(queryResult, everyResult(allVariants, anyOf(withStudy("S_1", withFileId("12877")), withStudy("S_2", withFileId("12882")))));
+                .append(VariantQueryParam.INCLUDE_FILE.key(), asList(file12877 , file12882)), options);
+        assertThat(queryResult, everyResult(allVariants, anyOf(withStudy("S_1", withFileId(file12877)), withStudy("S_2", withFileId(file12882)))));
     }
 
     @Test
     public void testGetByFilter() {
         VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
                 .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877")
-                .append(VariantQueryParam.INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz"), options);
+                .append(VariantQueryParam.INCLUDE_FILE.key(), file12877)
+                .append(VariantQueryParam.INCLUDE_STUDY.key(), "S_1"), options);
 
         query = new Query()
                 .append(VariantQueryParam.FILTER.key(), "LowGQX;LowMQ;LowQD;TruthSensitivityTranche99.90to100.00")
-                .append(VariantQueryParam.FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz");
+                .append(VariantQueryParam.FILE.key(), file12877)
+                .append(VariantQueryParam.STUDY.key(), "S_1");
         queryResult = query(query, options);
         System.out.println("queryResult.getNumResults() = " + queryResult.getNumResults());
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId("12877",
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId(file12877,
                 with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), allOf(
                         containsString("LowGQX"),
                         containsString("LowMQ"),
@@ -372,10 +614,10 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
 
         query = new Query()
                 .append(VariantQueryParam.FILTER.key(), "LowGQX,LowMQ")
-                .append(VariantQueryParam.FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz");
+                .append(VariantQueryParam.FILE.key(), file12877);
         queryResult = query(query, options);
         System.out.println("queryResult.getNumResults() = " + queryResult.getNumResults());
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId("12877",
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId(file12877,
                 with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), anyOf(
                         containsString("LowGQX"),
                         containsString("LowMQ")
@@ -383,18 +625,18 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
 
         query = new Query()
                 .append(VariantQueryParam.FILTER.key(), "\"LowGQX;LowMQ;LowQD;TruthSensitivityTranche99.90to100.00\"")
-                .append(VariantQueryParam.FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz");
+                .append(VariantQueryParam.FILE.key(), file12877);
         queryResult = query(query, options);
         System.out.println("queryResult.getNumResults() = " + queryResult.getNumResults());
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId("12877",
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId(file12877,
                 with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), is("LowGQX;LowMQ;LowQD;TruthSensitivityTranche99.90to100.00"))))));
 
         query = new Query()
                 .append(VariantQueryParam.FILTER.key(), "\"LowGQX;LowMQ;LowQD;TruthSensitivityTranche99.90to100.00\",\"LowGQX;LowQD;SiteConflict\"")
-                .append(VariantQueryParam.FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz");
+                .append(VariantQueryParam.FILE.key(), file12877);
         queryResult = query(query, options);
         System.out.println("queryResult.getNumResults() = " + queryResult.getNumResults());
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId("12877",
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId(file12877,
                 with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), anyOf(
                         is("LowGQX;LowMQ;LowQD;TruthSensitivityTranche99.90to100.00"),
                         is("LowGQX;LowQD;SiteConflict")
@@ -405,14 +647,14 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
     public void testGetByNegatedFilter() {
         VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
                 .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877")
-                .append(VariantQueryParam.INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz"), options);
+                .append(VariantQueryParam.INCLUDE_FILE.key(), file12877), options);
 
         query = new Query()
                 .append(VariantQueryParam.FILTER.key(), "LowGQX" + AND + "LowMQ" + AND + NOT + "SiteConflict")
-                .append(VariantQueryParam.FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz");
+                .append(VariantQueryParam.FILE.key(), file12877);
         queryResult = query(query, options);
         System.out.println("queryResult.getNumResults() = " + queryResult.getNumResults());
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId("12877",
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId(file12877,
                 with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), allOf(
                         containsString("LowGQX"),
                         containsString("LowMQ"),
@@ -421,10 +663,10 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
 
         query = new Query()
                 .append(VariantQueryParam.FILTER.key(), "LowGQX" + AND + "LowQD" + AND + NOT + "\"LowGQX;LowQD;SiteConflict\"")
-                .append(VariantQueryParam.FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz");
+                .append(VariantQueryParam.FILE.key(), file12877);
         queryResult = query(query, options);
         System.out.println("queryResult.getNumResults() = " + queryResult.getNumResults());
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId("12877",
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId(file12877,
                 with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), allOf(
                         containsString("LowGQX"),
                         containsString("LowQD"),
@@ -437,46 +679,46 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
     public void testGetByFilterMultiFile() {
         VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
                 .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877,NA12878")
-                .append(VariantQueryParam.INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz,1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz"), options);
+                .append(VariantQueryParam.INCLUDE_FILE.key(), asList(file12877, file12878)), options);
 
 
         query = new Query()
                 .append(VariantQueryParam.FILTER.key(), "LowGQX;LowMQ")
                 .append(VariantQueryParam.FILE.key(),
-                        "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz"
+                        file12877
                                 + OR +
-                                "1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz");
+                                file12878);
         queryResult = query(query, options);
 
         assertThat(queryResult, everyResult(allVariants, withStudy("S_1", anyOf(
-                withFileId("12877", with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), allOf(containsString("LowGQX"), containsString("LowMQ")))),
-                withFileId("12878", with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), allOf(containsString("LowGQX"), containsString("LowMQ"))))
+                withFileId(file12877, with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), allOf(containsString("LowGQX"), containsString("LowMQ")))),
+                withFileId(file12878, with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), allOf(containsString("LowGQX"), containsString("LowMQ"))))
         ))));
 
         query = new Query()
                 .append(VariantQueryParam.FILTER.key(), "LowGQX;LowMQ")
                 .append(VariantQueryParam.FILE.key(),
-                        "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz"
+                        file12877
                                 + AND +
-                                "1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz");
+                                file12878);
         queryResult = query(query, options);
 
         assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(
-                withFileId("12877", with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), allOf(containsString("LowGQX"), containsString("LowMQ")))),
-                withFileId("12878", with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), allOf(containsString("LowGQX"), containsString("LowMQ"))))
+                withFileId(file12877, with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), allOf(containsString("LowGQX"), containsString("LowMQ")))),
+                withFileId(file12878, with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), allOf(containsString("LowGQX"), containsString("LowMQ"))))
         ))));
 
         query = new Query()
                 .append(VariantQueryParam.FILTER.key(), "LowGQX")
                 .append(VariantQueryParam.FILE.key(),
-                        "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz"
+                        file12877
                                 + AND +
-                                "1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz");
+                                file12878);
         queryResult = query(query, options);
 
         assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(
-                withFileId("12877", with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), containsString("LowGQX"))),
-                withFileId("12878", with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), containsString("LowGQX")))
+                withFileId(file12877, with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), containsString("LowGQX"))),
+                withFileId(file12878, with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), containsString("LowGQX")))
         ))));
     }
 
@@ -484,21 +726,48 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
     public void testGetByFilterMultiFileNegatedFiles() {
         VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
                 .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877")
-                .append(VariantQueryParam.INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz,1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz"), options);
+                .append(VariantQueryParam.INCLUDE_FILE.key(), asList(file12877, file12878)), options);
 
 
         query = new Query()
                 .append(VariantQueryParam.FILTER.key(), "LowGQX;LowMQ")
                 .append(VariantQueryParam.FILE.key(),
-                        "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz"
+                        file12877
                                 + AND + NOT +
-                                "1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz");
+                                file12878);
         queryResult = query(query, options);
 
         assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(
-                withFileId("12877", with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), allOf(containsString("LowGQX"), containsString("LowMQ")))),
-                not(withFileId("12878"))
+                withFileId(file12877, with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), allOf(containsString("LowGQX"), containsString("LowMQ")))),
+                not(withFileId(file12878))
         ))));
+    }
+
+    @Test
+    public void testGetByFilterBySample() {
+        VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
+                .append(VariantQueryParam.INCLUDE_STUDY.key(), "S_1")
+                .append(VariantQueryParam.INCLUDE_SAMPLE.key(), sampleNA12877)
+                .append(VariantQueryParam.INCLUDE_FILE.key(), asList(file12877)), options);
+
+        query = new Query()
+                .append(VariantQueryParam.STUDY.key(), "S_1")
+                .append(VariantQueryParam.FILTER.key(), "LowGQX;LowMQ")
+                .append(VariantQueryParam.SAMPLE.key(), sampleNA12877);
+        queryResult = query(query, options);
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", allOf(
+                withFileId(file12877, withAttribute(FILTER, allOf(containsString("LowGQX"), containsString("LowMQ")))),
+                withSampleData(sampleNA12877, "GT", containsString("1"))
+        ))));
+
+
+        query = new Query()
+                .append(VariantQueryParam.STUDY.key(), "S_1")
+                .append(VariantQueryParam.FILTER.key(), "LowGQX;LowMQ")
+                .append(VariantQueryParam.INCLUDE_SAMPLE.key(), sampleNA12877);
+        queryResult = query(query, options);
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1",
+                withFileId(file12877, withAttribute(FILTER, allOf(containsString("LowGQX"), containsString("LowMQ")))))));
     }
 
     @Test
@@ -506,16 +775,16 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
         query = new Query()
                 .append(VariantQueryParam.FILTER.key(), "LowGQX;LowMQ")
                 .append(VariantQueryParam.FILE.key(),
-                        "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz"
+                        file12877
                                 + VariantQueryUtils.OR +
-                                "1K.end.platinum-genomes-vcf-NA12882_S1.genome.vcf.gz");
+                                file12882);
         queryResult = query(query, options);
         VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
                 .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877,NA12882")
-                .append(VariantQueryParam.INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz,1K.end.platinum-genomes-vcf-NA12882_S1.genome.vcf.gz"), options);
+                .append(VariantQueryParam.INCLUDE_FILE.key(), asList(file12877, file12882)), options);
         assertThat(queryResult, everyResult(allVariants, anyOf(
-                withStudy("S_1", withFileId("12877", with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), allOf(containsString("LowGQX"), containsString("LowMQ"))))),
-                withStudy("S_2", withFileId("12882", with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), allOf(containsString("LowGQX"), containsString("LowMQ")))))
+                withStudy("S_1", withFileId(file12877, with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), allOf(containsString("LowGQX"), containsString("LowMQ"))))),
+                withStudy("S_2", withFileId(file12882, with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), allOf(containsString("LowGQX"), containsString("LowMQ")))))
         )));
     }
 
@@ -523,39 +792,40 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
     public void testGetByQual() {
         VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
                 .append(VariantQueryParam.INCLUDE_SAMPLE.key(), "NA12877")
-                .append(VariantQueryParam.INCLUDE_FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz"), options);
+                .append(VariantQueryParam.INCLUDE_FILE.key(), file12877), options);
 
         query = new Query()
                 .append(VariantQueryParam.QUAL.key(), ">50")
-                .append(VariantQueryParam.FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz");
+                .append(VariantQueryParam.FILE.key(), file12877);
         queryResult = query(query, options);
         System.out.println("queryResult.getNumResults() = " + queryResult.getNumResults());
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId("12877",
+        System.out.println(allVariants.first().toJson());
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId(file12877,
                 with(QUAL, fileEntry -> fileEntry.getAttributes().get(QUAL), allOf(notNullValue(), with("", Double::valueOf, gt(50))))))));
 
         query = new Query()
                 .append(VariantQueryParam.QUAL.key(), "<50")
-                .append(VariantQueryParam.FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz");
+                .append(VariantQueryParam.FILE.key(), file12877);
         queryResult = query(query, options);
         System.out.println("queryResult.getNumResults() = " + queryResult.getNumResults());
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId("12877",
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId(file12877,
                 with(QUAL, fileEntry -> fileEntry.getAttributes().get(QUAL), allOf(notNullValue(), with("", Double::valueOf, lt(50))))))));
 
         query = new Query()
                 .append(VariantQueryParam.QUAL.key(), "<<5")
-                .append(VariantQueryParam.FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz");
+                .append(VariantQueryParam.FILE.key(), file12877);
         queryResult = query(query, options);
         System.out.println("queryResult.getNumResults() = " + queryResult.getNumResults());
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId("12877",
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId(file12877,
                 with(QUAL, fileEntry -> fileEntry.getAttributes().get(QUAL), anyOf(with("", Double::valueOf, lt(5)), nullValue()))))));
 
         query = new Query()
                 .append(VariantQueryParam.QUAL.key(), "<50")
                 .append(VariantQueryParam.FILTER.key(), "LowGQX,LowMQ")
-                .append(VariantQueryParam.FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz");
+                .append(VariantQueryParam.FILE.key(), file12877);
         queryResult = query(query, options);
         System.out.println("queryResult.getNumResults() = " + queryResult.getNumResults());
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId("12877",
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", withFileId(file12877,
                 allOf(
                         with(QUAL, fileEntry -> fileEntry.getAttributes().get(QUAL), allOf(notNullValue(), with("", Double::valueOf, lt(50)))),
                         with(FILTER, fileEntry -> fileEntry.getAttributes().get(FILTER), anyOf(
@@ -568,14 +838,14 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
     @Test
     public void testGetByRelease() {
         query = new Query().append(VariantQueryParam.RELEASE.key(), 1);
-        queryResult = dbAdaptor.get(query, options);
+        queryResult = query(query, options);
         VariantQueryResult<Variant> allVariants = dbAdaptor.get(new Query()
                 .append(VariantQueryParam.STUDY.key(), "S_1")
-                .append(VariantQueryParam.FILE.key(), "1K.end.platinum-genomes-vcf-NA12877_S1.genome.vcf.gz,1K.end.platinum-genomes-vcf-NA12878_S1.genome.vcf.gz")
+                .append(VariantQueryParam.FILE.key(), file12877 + OR + file12878)
                 .append(VariantQueryParam.INCLUDE_STUDY.key(), ALL)
                 .append(VariantQueryParam.INCLUDE_SAMPLE.key(), ALL)
                 .append(VariantQueryParam.INCLUDE_FILE.key(), ALL), options);
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", anyOf(withFileId("12877"), withFileId("12878")))));
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", anyOf(withFileId(file12877), withFileId(file12878)))));
 
         query = new Query().append(VariantQueryParam.RELEASE.key(), 2);
         queryResult = query(query, options);
@@ -584,7 +854,7 @@ public abstract class VariantDBAdaptorMultiFileTest extends VariantStorageBaseTe
                 .append(VariantQueryParam.INCLUDE_STUDY.key(), ALL)
                 .append(VariantQueryParam.INCLUDE_SAMPLE.key(), ALL)
                 .append(VariantQueryParam.INCLUDE_FILE.key(), ALL), options);
-        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", anyOf(withFileId("12877"), withFileId("12878"), withFileId("12879"), withFileId("12880")))));
+        assertThat(queryResult, everyResult(allVariants, withStudy("S_1", anyOf(withFileId(file12877), withFileId(file12878), withFileId(file12879), withFileId(file12880)))));
 
     }
 }
